@@ -1,0 +1,4 @@
+# version os arch filename sha256
+1.27.2 darwin arm64 go1.27.2.darwin-arm64.tar.gz 76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c4c5
+1.27.2 darwin amd64 go1.27.2.darwin-amd64.tar.gz 587b59182488b23aa6e5fc25110405a3e0e5b38ed2f5b2f46ed13c32aee356fe
+1.27.2 windows amd64 go1.27.2.windows-amd64.zip 1314008898bd40df77af4b014f777f08873dbdfbcd3d92308728ee03304fe04f

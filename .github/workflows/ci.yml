@@ -1,0 +1,65 @@
+name: Build and test
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache: false
+      - name: Offline bootstrap tests
+        if: runner.os == 'macOS'
+        run: python3 -m unittest discover -s tests -v
+      - name: macOS launcher smoke test
+        if: runner.os == 'macOS'
+        run: bash scripts/od2gp.sh version
+      - name: Windows launcher smoke test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/od2gp.ps1 version
+      - name: Windows first-run install smoke test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $goDirectory = Split-Path (Get-Command go).Source
+          $env:PATH = (($env:PATH -split ';') | Where-Object { $_.TrimEnd('\') -ne $goDirectory.TrimEnd('\') }) -join ';'
+          if (Get-Command go -ErrorAction SilentlyContinue) { throw 'Go is still on PATH; first-run test would not exercise installation.' }
+          $env:OD2GP_TOOL_DIR = Join-Path $env:RUNNER_TEMP 'od2gp first-run tools'
+          ./scripts/od2gp.ps1 version
+      - run: go test ./...
+      - run: go vet ./...
+      - name: Race tests
+        if: runner.os == 'macOS'
+        run: go test -race ./...
+      - run: go build ./cmd/od2gp
+      - run: ./od2gp version
+        if: runner.os == 'macOS'
+      - run: ./od2gp.exe version
+        if: runner.os == 'Windows'
+  cross-build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - {goos: windows, goarch: amd64, suffix: .exe}
+          - {goos: darwin, goarch: amd64, suffix: ''}
+          - {goos: darwin, goarch: arm64, suffix: ''}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache: false
+      - run: go build -trimpath -o dist/od2gp-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.suffix }} ./cmd/od2gp
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
