@@ -120,3 +120,6 @@ Transfers default to three parallel files, sharing the saved staging cap; Google
 Creation now uses one sequential batch committer, with up to 50 items per request (`--batch-size 1-50`, default 50). Token queues are saved in the encrypted journal and flush early for queue time, staging pressure or the end of uploads. Retry diagnostics identify HTTP status and operation. See [durable batches](docs/migration.md#durable-creation-batches).
 
 Choose **9 — Language / Ngôn ngữ** for **English** or **Tiếng Việt**. The menu remembers your language separately from account credentials and keeps your transfer settings. Menu pages, job selection, speed settings, recovery, Vault/overlap warnings and report prompts are translated. Detailed CLI/provider output and delegated setup/drive commands may remain in English. Names, paths, command flags and report data are unchanged.
+
+
+The menu remembers English/Tiếng Việt, transfer settings, and **10) Source folder filters** for new migrations. Excluded files remain visible as skipped in reports; Continue preserves each saved job's scope. See [the runbook](docs/runbook.md#folder-filters-in-the-menu).

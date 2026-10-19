@@ -31,12 +31,27 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	yes := flags.Bool("yes", false, "start uploads without an interactive confirmation")
 	format := flags.String("format", "json", "report format: json or csv")
 	excludeVault := flags.Bool("exclude-personal-vault", false, "explicitly omit inaccessible /Personal Vault from a root scan; saved with the job")
+	var excludedFolders []string
+	flags.Func("exclude-folder", "omit a drive-root folder from uploads (repeatable; new plans only)", func(value string) error {
+		excludedFolders = append(excludedFolders, value)
+		return nil
+	})
 	reconcile := flags.Bool("reconcile", false, "allow identical-byte retry of an uncertain creation")
 	wait := flags.Bool("wait", false, "check pending videos for up to 30 minutes")
 	batchSize := flags.Int("batch-size", 50, "maximum items per sequential Google creation batch (1-50)")
 	workers := flags.Int("workers", 3, "parallel file transfers (1-8); library creation remains sequential")
 	retries := flags.Int("retries", 5, "automatic retries per file for temporary Google failures (0-10)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
+		return 2
+	}
+	if len(excludedFolders) > 0 && command != "plan" {
+		fmt.Fprintln(errOut, "--exclude-folder is supported only by new plans; Continue preserves the saved filter")
+		return 2
+	}
+	var filterErr error
+	excludedFolders, filterErr = migration.NormalizeExcludedFolders(excludedFolders)
+	if filterErr != nil {
+		fmt.Fprintln(errOut, filterErr)
 		return 2
 	}
 	if *excludeVault && command != "plan" && command != "run" && command != "resume" {
@@ -247,7 +262,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	}
 	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, MaxRetries: *retries, Workers: *workers, BatchSize: *batchSize}
 	if command == "plan" {
-		meta = migration.Meta{SourceBackend: backend, SourceSubject: microsoftSession.Account.Subject, SourceClient: microsoftSession.ClientID, ID: *jobID, Folder: selected, DriveID: driveID, GoogleSubject: session.Account.Subject, GoogleClient: session.ClientID, CacheBytes: *cacheGiB << 30, ExcludePersonalVault: *excludeVault, Created: time.Now().UTC()}
+		meta = migration.Meta{SourceBackend: backend, SourceSubject: microsoftSession.Account.Subject, SourceClient: microsoftSession.ClientID, ID: *jobID, Folder: selected, DriveID: driveID, GoogleSubject: session.Account.Subject, GoogleClient: session.ClientID, CacheBytes: *cacheGiB << 30, ExcludedFolders: excludedFolders, ExcludePersonalVault: *excludeVault, Created: time.Now().UTC()}
 		if err := store.Save(0, "job", meta); err != nil {
 			return fail(err)
 		}
@@ -395,6 +410,9 @@ func migrationSummary(store *journal.Store, meta migration.Meta, out io.Writer) 
 	if meta.ExcludePersonalVault {
 		fmt.Fprintln(out, vaultExclusionNotice)
 	}
+	for _, folder := range meta.ExcludedFolders {
+		fmt.Fprintf(out, "Upload filter: %s (files remain in inventory as skipped)\n", folder)
+	}
 	if counts["creating"] > 0 {
 		fmt.Fprintf(out, "Uncertain destination creations: %d. Review the report before resume --reconcile.\n", counts["creating"])
 	}
@@ -422,6 +440,11 @@ func writeMigrationReport(store *journal.Store, meta migration.Meta, format stri
 				return err
 			}
 		}
+		for _, folder := range meta.ExcludedFolders {
+			if err := writer.Write([]string{csvSafe(folder), "", "folder_filter", "", "saved upload exclusion; matching files are listed as skipped"}); err != nil {
+				return err
+			}
+		}
 		for _, id := range ids {
 			var item migration.Item
 			if err := store.Load(id, &item); err != nil {
@@ -437,6 +460,12 @@ func writeMigrationReport(store *journal.Store, meta migration.Meta, format stri
 	encoder := json.NewEncoder(out)
 	if meta.ExcludePersonalVault {
 		if err := encoder.Encode(map[string]any{"source": "/Personal Vault", "state": "excluded_folder", "reason": vaultExclusionReason, "contents_count_known": false}); err != nil {
+			return err
+		}
+	}
+
+	for _, folder := range meta.ExcludedFolders {
+		if err := encoder.Encode(map[string]any{"source": folder, "state": "folder_filter", "reason": "saved upload exclusion; matching files are listed as skipped"}); err != nil {
 			return err
 		}
 	}

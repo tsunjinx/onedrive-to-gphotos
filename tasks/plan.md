@@ -1,13 +1,13 @@
 # OneDrive to Google Photos CLI — implementation and validation plan
 
-Updated: 2026-10-18. The owner reports legacy OneDrive/Google sign-in working and has started a legacy test upload. New jobs now use the native Graph adapter; native login and performance verification remain pending. The transfer engine, encrypted journal/staging, run/resume/status/report commands, video polling and bounded Google retries are implemented. Go race tests, vet and Windows x64/macOS Intel/Apple Silicon builds passed. Live photo/video uploads, native Windows execution and actual power-loss validation remain unverified. See [review evidence](review.md) and the [operating instructions](../docs/runbook.md).
+Updated: 2026-10-19. Native Graph and legacy rclone transfers, encrypted checkpoints, parallel uploads with sequential Google creation batches, bilingual menu and remembered settings are implemented. Owner evidence includes photo metadata retention and a reconciled single-video creation; live READY/playback/audio, multi-item cloud recovery, native Windows and power-loss acceptance remain open. Graph read-only requests now have bounded throttling retries, and new plans support explicit folder upload exclusions. See [review evidence](review.md) and [operating instructions](../docs/runbook.md).
 
 ## Current stage and next gates
 
 | Stage | Status | Exit criterion |
 |---|---|---|
 | Setup and authentication | Implemented; owner reports success | Both auth check commands succeed for the intended accounts |
-| Inventory and transfer engine | Implemented; live root scan blocked by Personal Vault; explicit exclusion implemented, awaiting retry | Saved-job inventory completes and selected-folder counts reconcile with source and destination |
+| Inventory and transfer engine | Implemented; owner completed root inventory with explicit Vault exclusion | Saved-job inventory completes and selected-folder counts reconcile with source and destination |
 | Retry and restart | Implemented; simulated crash/interruption tests pass | Real interruption resumes the same job without repeating committed work |
 | Representative media trial | After inventory recovery | Photos display correctly; videos reach READY with correct playback/audio/dates |
 | Controlled larger run | Pending trial | A non-overlapping folder or the same saved full-library job completes with an explainable report and bounded disk usage |
@@ -264,3 +264,13 @@ Count journal `creating` items in menu jobs and label recovery needs. Continue o
 ## Menu language selection — 2026-10-19
 
 Add option 9 for English / Tiếng Việt, saving `en` or `vi` in the existing non-secret menu preferences. Missing language remains English for backward compatibility. Validate supported languages, retain prior values on cancellation/save failure, and preserve transfer preferences during language changes and language during preset changes. Translate only explicit menu UI templates before formatting. Never run report/file data, IDs, paths, command arguments or provider responses through a text-replacement translator. Core menu subpages are bilingual; detailed/delegated CLI output remains outside this increment. Test fresh-launch persistence, switching back, recovery/settings behavior, format-parameter compatibility and unchanged command/report protocols, then commit and attempt a verified private-repository push.
+
+
+## Current increment: source retries, filters and recovery verification (2026-10-19)
+
+- Graph GET requests retry HTTP 429/502/503/504 at most three times, with exponential jitter and Retry-After seconds/date support. Each attempt is bounded to 30 seconds. Retry waits are cancellable; pauses longer than 15 minutes stop automatically. Exhaustion/cancelled waits expose a safe deadline that active job discovery/transfer saves in the encrypted journal. Read-only scans without a saved job show the deadline but have no durable job checkpoint.
+- Retries happen before handing a response body to a caller. Partial download streams and staging-write errors are not replayed into an existing writer. Authentication/permission errors stop immediately. Source GET retries are separate from the menu's Google transfer retry count.
+- Menu option 10 remembers literal drive-root folder filters for new migrations. Repeated `plan --exclude-folder /Documents/Projects` works in the CLI. Policy is saved in the job and shown in preview/reports; Continue preserves it. Filters are case insensitive at folder boundaries, support Unicode and reject traversal. Full inventory is retained, with matching files explicitly skipped; these filters do not speed up scanning or bypass inaccessible folders. Personal Vault still requires its separate explicit choice.
+- Local reopen tests cover partial batch successes plus unknown outcomes, explicit reconciliation of only uncertain items, pending-video polling by stored ID, and durable Graph pause recovery. They do not substitute for abrupt-kill, live provider or hardware power-off acceptance.
+
+Next gates: owner validates a small non-overlapping filtered plan and continued existing-job throughput; verify representative video READY/playback/audio, then native Windows and disposable-VM power-loss recovery before the 700 GB run. Existing jobs retain their current source scope and staging cap.

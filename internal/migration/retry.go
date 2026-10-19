@@ -25,6 +25,9 @@ func (e *Engine) transferWithRetries(ctx context.Context, meta *Meta, id int64, 
 		if saveErr := e.Store.Save(id, committed.State, committed); saveErr != nil {
 			return fmt.Errorf("cannot save failure state: %w", saveErr)
 		}
+		if pauseErr := e.persistSourcePause(meta, err); pauseErr != nil {
+			return pauseErr
+		}
 		var api *googlephotos.APIError
 		var connection *googlephotos.ConnectionError
 		retryable := errors.As(err, &connection)
@@ -92,4 +95,17 @@ func (e *Engine) scheduleRetry(ctx context.Context, meta *Meta, api *googlephoto
 	}
 	fmt.Fprintf(e.Progress, "Temporary Google Photos failure: %s; retry %d/%d for this operation.\n", detail, attempt+1, e.MaxRetries)
 	return e.awaitRetry(ctx, meta)
+}
+
+func (e *Engine) persistSourcePause(meta *Meta, original error) error {
+	var pause interface{ RetryTime() time.Time }
+	if !errors.As(original, &pause) {
+		return nil
+	}
+	e.retryMu.Lock()
+	defer e.retryMu.Unlock()
+	if until := pause.RetryTime(); until.After(meta.RetryAt) {
+		meta.RetryAt = until
+	}
+	return e.Store.Save(0, "job", meta)
 }

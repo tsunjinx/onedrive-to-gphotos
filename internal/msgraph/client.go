@@ -25,6 +25,7 @@ type Client struct {
 	HTTP                 *http.Client
 	Drive                string
 	ExcludePersonalVault bool
+	retryWait            func(context.Context, time.Duration) error
 	downloadTransport    http.RoundTripper
 }
 type Drive struct {
@@ -70,21 +71,49 @@ func (c Client) request(ctx context.Context, address string) (*http.Response, er
 	if c.HTTP == nil {
 		return nil, errors.New("Microsoft Graph is not signed in")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
-	if err != nil {
-		return nil, errors.New("invalid Graph request")
-	}
-	// Disallow authenticated redirects even if an injected client follows them.
+	// Retry only idempotent GETs, before exposing a response body to callers.
 	client := *c.HTTP
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	resp, err := client.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, errors.New("Microsoft Graph connection failed; saved progress is kept")
+	if client.Timeout == 0 || client.Timeout > 30*time.Second {
+		client.Timeout = 30 * time.Second
 	}
-	return resp, nil
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+		if err != nil {
+			return nil, errors.New("invalid Graph request")
+		}
+		if attempt > 0 {
+			req.Close = true
+		}
+		resp, err := client.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, errors.New("Microsoft Graph connection failed; saved progress is kept")
+		}
+		if !graphTemporary(resp.StatusCode) {
+			return resp, nil
+		}
+		if attempt >= 3 {
+			delay := graphRetryDelay(resp.Header.Get("Retry-After"), attempt, time.Now())
+			resp.Body.Close()
+			return nil, &PauseError{Until: time.Now().Add(delay)}
+		}
+		delay := graphRetryDelay(resp.Header.Get("Retry-After"), attempt, time.Now())
+		resp.Body.Close()
+		client.CloseIdleConnections()
+		if delay > 15*time.Minute {
+			return nil, &PauseError{Until: time.Now().Add(delay)}
+		}
+		wait := c.retryWait
+		if wait == nil {
+			wait = waitGraph
+		}
+		if err := wait(ctx, delay); err != nil {
+			return nil, errors.Join(err, &PauseError{Until: time.Now().Add(delay)})
+		}
+	}
 }
 func apiFailure(resp *http.Response) error {
 	// Do not include response bodies, source paths or credential-bearing URLs.
@@ -96,15 +125,13 @@ func apiFailure(resp *http.Response) error {
 	case 404:
 		return errors.New("Microsoft Graph source item or drive was not found")
 	case 429, 503:
-		return errors.New("Microsoft Graph requested a pause; retry later (no automatic early retry)")
+		return errors.New("Microsoft Graph still requests a pause after bounded retries; retry later")
 	default:
 		return fmt.Errorf("Microsoft Graph request failed (HTTP %d); saved progress is kept", resp.StatusCode)
 	}
 }
 func (c Client) get(ctx context.Context, address string, value any) error {
-	request, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-	resp, err := c.request(request, address)
+	resp, err := c.request(ctx, address)
 	if err != nil {
 		return err
 	}

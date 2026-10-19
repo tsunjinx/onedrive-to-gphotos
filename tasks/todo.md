@@ -23,6 +23,9 @@ Updated 2026-10-19. See [the current plan](plan.md), [operating instructions](..
 - [x] Add bounded parallel file transfers (default 3, range 1-8), shared staging/disk reservations, serial media creation and shared Google retry pauses.
 - [x] Sequential creation batches with durable token queues, per-item outcomes and timer/end/staging-pressure flushes.
 - [x] HTTP status/operation diagnostics for retry messages, with safe fixed error categories and batch request timings.
+- [x] Bounded read-only Graph HTTP retries with Retry-After, cancellation and saved-job pause deadlines on stop; permission/authentication failures remain immediate.
+- [x] Menu option 10 and repeatable plan --exclude-folder; immutable per-job policy, explicit skipped records and report/preview disclosure; full scan retained.
+- [x] Local reopened-journal checks for mixed batch outcomes, uncertain-only recovery, video polling without re-upload and source pause persistence. Live and abrupt-power-off gates remain unchecked.
 - [ ] Benchmark native parallel-plus-batch throughput and remaining per-stage latency; verify actual multi-item recovery.
 - [ ] Determine whether Personal Vault contains media needing separate migration; its inaccessible contents have unknown count/size and are outside this job.
 - [ ] Check current free destination/local storage, review the completed preview and conduct a short controlled trial within that same root job.

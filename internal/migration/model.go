@@ -28,6 +28,7 @@ type Meta struct {
 	CacheBytes                                       int64
 	InventoryComplete                                bool
 	ExcludePersonalVault                             bool
+	ExcludedFolders                                  []string
 	Created                                          time.Time
 	RetryAt                                          time.Time
 }

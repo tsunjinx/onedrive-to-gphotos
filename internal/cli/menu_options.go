@@ -9,21 +9,25 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"od2gp/internal/migration"
 )
 
 type transferOptions struct {
-	Language   string `json:"language,omitempty"`
-	Workers    int    `json:"workers"`
-	BatchSize  int    `json:"batch_size"`
-	Retries    int    `json:"retries"`
-	WaitVideos bool   `json:"wait_videos"`
+	Language        string `json:"language,omitempty"`
+	ExcludedFolders string `json:"excluded_folders,omitempty"`
+	Workers         int    `json:"workers"`
+	BatchSize       int    `json:"batch_size"`
+	Retries         int    `json:"retries"`
+	WaitVideos      bool   `json:"wait_videos"`
 }
 
 func defaultTransferOptions() transferOptions {
 	return transferOptions{Workers: 3, BatchSize: 50, Retries: 5, WaitVideos: true}
 }
 func (o transferOptions) valid() bool {
-	return (o.Language == "" || o.Language == "en" || o.Language == "vi") && o.Workers >= 1 && o.Workers <= 8 && o.BatchSize >= 1 && o.BatchSize <= 50 && o.Retries >= 0 && o.Retries <= 10
+	_, err := menuExcludedFolders(o.ExcludedFolders)
+	return err == nil && len(o.ExcludedFolders) <= 2048 && (o.Language == "" || o.Language == "en" || o.Language == "vi") && o.Workers >= 1 && o.Workers <= 8 && o.BatchSize >= 1 && o.BatchSize <= 50 && o.Retries >= 0 && o.Retries <= 10
 }
 func (o transferOptions) localizedSummary(language string) string {
 	wait := "check videos once"
@@ -137,8 +141,10 @@ func (a *menuApp) configureTransfers() {
 		switch choice {
 		case "1":
 			language := opts.Language
+			filters := opts.ExcludedFolders
 			opts = defaultTransferOptions()
 			opts.Language = language
+			opts.ExcludedFolders = filters
 		case "2":
 			opts.Workers = 1
 		case "3":
@@ -213,5 +219,46 @@ func (a *menuApp) confirmRecovery(job menuJob) bool {
 		default:
 			fmt.Fprintln(a.out, a.t("Choose 1, 2 or 0."))
 		}
+	}
+}
+
+func menuExcludedFolders(value string) ([]string, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, "|")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return migration.NormalizeExcludedFolders(parts)
+}
+func (a *menuApp) configureSourceFilters() {
+	fmt.Fprintln(a.out, a.t("Source folder filters (new migrations only). Continue keeps its saved filter."))
+	fmt.Fprintln(a.out, a.t("Enter drive-root folders separated by |, e.g. /Documents/Projects | /Apps. Type - to clear, or b to cancel."))
+	fmt.Fprintln(a.out, a.t("Files are still scanned and shown as skipped in reports. No folders are excluded automatically."))
+	for {
+		opts := a.currentOptions()
+		answer, err := a.ask("Folders to exclude", opts.ExcludedFolders)
+		if err != nil || strings.EqualFold(answer, "b") {
+			return
+		}
+		if answer == "-" {
+			answer = ""
+		}
+		folders, err := menuExcludedFolders(answer)
+		if err != nil {
+			fmt.Fprintln(a.errOut, a.t("Use absolute folder paths such as /Documents/Projects; do not use . or .. segments."))
+			continue
+		}
+		opts.ExcludedFolders = strings.Join(folders, " | ")
+		if a.saveOptions != nil {
+			if err := a.saveOptions(opts); err != nil {
+				fmt.Fprintln(a.errOut, a.t("Could not save transfer settings. Previous settings are kept; check local folder permissions and disk space."))
+				return
+			}
+		}
+		a.options = opts
+		fmt.Fprintln(a.out, a.t("Saved filters for new migrations:"), opts.ExcludedFolders)
+		return
 	}
 }

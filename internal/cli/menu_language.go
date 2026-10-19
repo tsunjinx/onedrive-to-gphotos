@@ -45,7 +45,7 @@ func (a *menuApp) configureLanguage() {
 var vietnameseMenu = map[string]string{
 	"OneDrive → Google Photos\nCopy photos and videos. OneDrive originals are kept.": "OneDrive → Google Photos\nSao chép ảnh và video. Giữ nguyên tệp gốc trên OneDrive.",
 	"Settings:": "Cài đặt:",
-	"\n1) Check both account connections\n2) New migration (choose drive, then preview)\n3) Continue a saved migration\n4) View job progress\n5) Export a report\n6) Set up or reconnect accounts\n7) Choose OneDrive drive\n8) Transfer speed & options\n9) Language / Ngôn ngữ\n0) Exit": "\n1) Kiểm tra kết nối hai tài khoản\n2) Tạo tác vụ mới (chọn ổ đĩa, rồi xem trước)\n3) Tiếp tục tác vụ đã lưu\n4) Xem tiến trình tác vụ\n5) Xuất báo cáo\n6) Thiết lập hoặc đăng nhập lại\n7) Chọn ổ đĩa OneDrive\n8) Tốc độ truyền & tùy chọn\n9) Language / Ngôn ngữ\n0) Thoát",
+	"\n1) Check both account connections\n2) New migration (choose drive, then preview)\n3) Continue a saved migration\n4) View job progress\n5) Export a report\n6) Set up or reconnect accounts\n7) Choose OneDrive drive\n8) Transfer speed & options\n9) Language / Ngôn ngữ\n10) Source folder filters\n0) Exit": "\n1) Kiểm tra kết nối hai tài khoản\n2) Tạo tác vụ mới (chọn ổ đĩa, rồi xem trước)\n3) Tiếp tục tác vụ đã lưu\n4) Xem tiến trình tác vụ\n5) Xuất báo cáo\n6) Thiết lập hoặc đăng nhập lại\n7) Chọn ổ đĩa OneDrive\n8) Tốc độ truyền & tùy chọn\n9) Language / Ngôn ngữ\n10) Lọc thư mục nguồn\n0) Thoát",
 	"\nReady to continue: %q (%d/%d eligible completed, %d processing)\n": "\nCó thể tiếp tục: %q (%d/%d tệp đủ điều kiện đã xong, %d đang xử lý)\n",
 	"Choose":                            "Chọn",
 	"Choose a number from 0 to 9.":      "Chọn một số từ 0 đến 9.",
@@ -114,5 +114,13 @@ var vietnameseMenu = map[string]string{
 	"cannot list saved jobs; check local data directory access":                                                 "không liệt kê được tác vụ; hãy kiểm tra quyền truy cập thư mục dữ liệu cục bộ",
 	"Saved transfer settings could not be loaded. Using recommended settings; choose option 8 to replace them.": "Không tải được cài đặt truyền đã lưu. Đang dùng cấu hình khuyến nghị; chọn mục 8 để lưu lại.",
 	"Could not save language. Previous language is kept.":                                                       "Không lưu được ngôn ngữ. Giữ nguyên ngôn ngữ trước đó.",
-	"Language saved.": "Đã lưu ngôn ngữ Tiếng Việt.",
+	"Language saved.":               "Đã lưu ngôn ngữ Tiếng Việt.",
+	"Choose a number from 0 to 10.": "Chọn một số từ 0 đến 10.",
+	"Source folder filters (new migrations only). Continue keeps its saved filter.":                               "Lọc thư mục nguồn (chỉ áp dụng cho tác vụ mới). Tiếp tục giữ nguyên bộ lọc đã lưu.",
+	"Enter drive-root folders separated by |, e.g. /Documents/Projects | /Apps. Type - to clear, or b to cancel.": "Nhập đường dẫn từ gốc ổ đĩa, ngăn cách bằng |, ví dụ /Documents/Projects | /Apps. Nhập - để xóa, hoặc b để hủy.",
+	"Files are still scanned and shown as skipped in reports. No folders are excluded automatically.":             "Các tệp vẫn được quét và ghi là bỏ qua trong báo cáo. Không có thư mục nào tự động bị loại.",
+	"Folders to exclude": "Thư mục cần loại trừ",
+	"Use absolute folder paths such as /Documents/Projects; do not use . or .. segments.": "Dùng đường dẫn tuyệt đối như /Documents/Projects; không dùng đoạn . hoặc ...",
+	"Saved filters for new migrations:":                                                   "Đã lưu bộ lọc cho tác vụ mới:",
+	"Excluded from uploads:":                                                              "Không tải lên:",
 }

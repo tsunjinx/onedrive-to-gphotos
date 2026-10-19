@@ -48,6 +48,14 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 	if meta.InventoryComplete {
 		return nil
 	}
+	if _, err := NormalizeExcludedFolders(meta.ExcludedFolders); err != nil {
+		return err
+	}
+	if time.Now().Before(meta.RetryAt) {
+		if err := e.awaitRetry(ctx, meta); err != nil {
+			return err
+		}
+	}
 	if err := e.Store.ResetInventory(); err != nil {
 		return err
 	}
@@ -75,6 +83,9 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 			return err
 		}
 		item.MIME, item.Video, item.Reason = classify(source)
+		if excluded := ExcludedFolder(item.Path, meta.ExcludedFolders); excluded != "" {
+			item.Reason = "excluded by saved folder filter: " + excluded
+		}
 		if item.Reason != "" {
 			item.State = "skipped"
 		}
@@ -88,6 +99,9 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 		return nil
 	})
 	if err != nil {
+		if saveErr := e.persistSourcePause(meta, err); saveErr != nil {
+			return saveErr
+		}
 		return err
 	}
 	if err := flush(); err != nil {

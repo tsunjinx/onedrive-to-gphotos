@@ -113,7 +113,7 @@ func (a *menuApp) run() int {
 				break
 			}
 		}
-		fmt.Fprintln(a.out, a.t("\n1) Check both account connections\n2) New migration (choose drive, then preview)\n3) Continue a saved migration\n4) View job progress\n5) Export a report\n6) Set up or reconnect accounts\n7) Choose OneDrive drive\n8) Transfer speed & options\n9) Language / Ngôn ngữ\n0) Exit"))
+		fmt.Fprintln(a.out, a.t("\n1) Check both account connections\n2) New migration (choose drive, then preview)\n3) Continue a saved migration\n4) View job progress\n5) Export a report\n6) Set up or reconnect accounts\n7) Choose OneDrive drive\n8) Transfer speed & options\n9) Language / Ngôn ngữ\n10) Source folder filters\n0) Exit"))
 		choice, err := a.ask("Choose", defaultChoice)
 		if err != nil {
 			if a.ctx.Err() != nil {
@@ -176,8 +176,10 @@ func (a *menuApp) run() int {
 			a.configureTransfers()
 		case "9":
 			a.configureLanguage()
+		case "10":
+			a.configureSourceFilters()
 		default:
-			notice = "Choose a number from 0 to 9."
+			notice = "Choose a number from 0 to 10."
 			continue
 		}
 		if a.ctx.Err() != nil {
@@ -226,6 +228,15 @@ func (a *menuApp) newPlan() {
 		fmt.Fprintln(a.out, a.t("Enter a whole number from 1 to 1024. The default is 30."))
 	}
 	planArgs := []string{"plan", "--source", folder, "--cache-gib", strconv.Itoa(cache)}
+	filters, err := menuExcludedFolders(a.currentOptions().ExcludedFolders)
+	if err != nil {
+		fmt.Fprintln(a.errOut, err)
+		return
+	}
+	for _, excluded := range filters {
+		planArgs = append(planArgs, "--exclude-folder", excluded)
+		fmt.Fprintln(a.out, a.t("Excluded from uploads:"), excluded)
+	}
 	if normalizeMenuFolder(folder) == "" {
 		exclude, proceed := a.chooseVaultPolicy()
 		if !proceed {

@@ -252,3 +252,25 @@ A job with uncertain creation results is marked **needs recovery**. Choose Conti
 Choose **9 — Language / Ngôn ngữ**, then **1 — English** or **2 — Tiếng Việt**. **0** keeps the current language. The selection applies immediately and is remembered in the existing private menu preferences for future launches. Older preference files without a language continue in English. Selecting a language preserves speed, batch, retry and video-wait values; Recommended does not reset language.
 
 The main menu and its guided job/settings/recovery/report/Vault/overlap pages are translated. Detailed provider/transfer output, delegated setup/drive commands and provider browser pages may still be English. Commands, account identities, paths, file contents and CSV/JSON report data retain their original values. Prompts requiring `yes` keep that explicit confirmation token; the video-wait option also accepts `có/co` and `không/khong`.
+
+
+## Folder filters in the menu
+
+Choose **10) Source folder filters** (Tiếng Việt: **Lọc thư mục nguồn**) before **2) New migration**. Enter exact drive-root folders separated by `|`, for example `/Documents/NetBeansProjects | /Apps`. Enter `-` to clear the filters or `b` to cancel. No directory or icon is excluded automatically. Filters do not inspect image content.
+
+The preview lists your filters. Matching files are still scanned and appear as `skipped` with their folder-filter reason in JSON/CSV reports. This preserves complete inventory accounting, but does not make discovery faster or bypass inaccessible directories. Personal Vault keeps its separate exclusion and unknown-content notice. A filter outside the selected source folder has no effect.
+
+Filters apply only to new jobs. **Continue** uses the saved policy, even after you change menu settings. Existing uploaded files are unaffected; changing scope requires a new plan with independent completion history and possible overlap. For your current running job, keep using Continue to preserve progress.
+
+CLI equivalent:
+
+```bash
+bash scripts/od2gp.sh plan --source / --exclude-personal-vault \
+  --exclude-folder /Documents/NetBeansProjects --exclude-folder /Apps
+```
+
+## Microsoft Graph temporary failures
+
+Read-only Graph GETs automatically retry HTTP 429/502/503/504 up to three times, respecting `Retry-After` or using exponential delay with jitter. This source retry limit is separate from the menu's Google retry count. Access-denied and expired-sign-in errors stop immediately. A wait exceeding 15 minutes stops with a resume deadline. Active job scans/transfers preserve that deadline when retries are exhausted or a retry wait is cancelled; Continue observes the saved pause. Standalone source scans have no job checkpoint.
+
+Interrupted response bodies and partial file downloads fail safely instead of appending a replay to staging. Continue recovers from the last durable file checkpoint. Source-network errors without a retryable HTTP response still stop for manual continuation. This release does not claim complete automatic retry of every source failure.
