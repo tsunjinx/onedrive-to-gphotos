@@ -16,17 +16,26 @@ import (
 )
 
 type menuApp struct {
-	ctx         context.Context
-	input       *bufio.Reader
-	out, errOut io.Writer
-	jobs        func() ([]menuJob, error)
-	dispatch    func([]string, io.Reader, io.Writer, io.Writer) int
+	ctx           context.Context
+	input         *bufio.Reader
+	out, errOut   io.Writer
+	jobs          func() ([]menuJob, error)
+	dispatch      func([]string, io.Reader, io.Writer, io.Writer) int
+	options       transferOptions
+	saveOptions   func(transferOptions) error
+	startupNotice string
 }
 
 func interactiveMenu(ctx context.Context, input io.Reader, out, errOut io.Writer, getenv func(string) string, root string) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	app := menuApp{ctx: ctx, input: bufio.NewReader(newMenuInput(ctx, input)), out: out, errOut: errOut}
+	options, err := loadMenuOptions(root)
+	app.options = options
+	if err != nil {
+		app.startupNotice = err.Error() + ". Using recommended settings for now."
+	}
+	app.saveOptions = func(opts transferOptions) error { return saveMenuOptions(root, opts) }
 	app.jobs = func() ([]menuJob, error) { return loadMenuJobs(root) }
 	app.dispatch = func(args []string, input io.Reader, output, errors io.Writer) int {
 		return RunContext(ctx, args, input, output, errors, getenv)
@@ -79,13 +88,14 @@ func (a *menuApp) ask(prompt, fallback string) (string, error) {
 }
 
 func (a *menuApp) run() int {
-	notice := ""
+	notice := a.startupNotice
 	for {
 		if a.ctx.Err() != nil {
 			return 1
 		}
 		clearPromptScreen(a.out)
 		fmt.Fprintln(a.out, "OneDrive → Google Photos\nCopy photos and videos. OneDrive originals are kept.")
+		fmt.Fprintln(a.out, "Settings:", a.currentOptions().summary())
 		if notice != "" {
 			fmt.Fprintln(a.out, notice)
 			notice = ""
@@ -102,7 +112,7 @@ func (a *menuApp) run() int {
 				break
 			}
 		}
-		fmt.Fprintln(a.out, "\n1) Check both account connections\n2) New migration (choose drive, then preview)\n3) Continue a saved migration\n4) View job progress\n5) Export a report\n6) Set up or reconnect accounts\n7) Choose OneDrive drive\n0) Exit")
+		fmt.Fprintln(a.out, "\n1) Check both account connections\n2) New migration (choose drive, then preview)\n3) Continue a saved migration\n4) View job progress\n5) Export a report\n6) Set up or reconnect accounts\n7) Choose OneDrive drive\n8) Transfer speed & options\n0) Exit")
 		choice, err := a.ask("Choose", defaultChoice)
 		if err != nil {
 			if a.ctx.Err() != nil {
@@ -128,7 +138,7 @@ func (a *menuApp) run() int {
 					if job.Started {
 						command = "resume"
 					}
-					args = []string{command, "--job", job.ID, "--wait"}
+					args = a.transferArgs(command, job.ID)
 					if job.Folder == "" && !job.InventoryComplete && !job.ExcludePersonalVault && !job.Started {
 						exclude, proceed := a.chooseVaultPolicy()
 						if !proceed {
@@ -141,9 +151,19 @@ func (a *menuApp) run() int {
 					if !job.Started && !a.confirmOverlap(job, jobs) {
 						break
 					}
+					if job.Uncertain > 0 {
+						if !a.confirmRecovery(job) {
+							break
+						}
+						args = append(args, "--reconcile")
+					}
 
 				}
-				a.execute(args, a.out)
+				if choice == "3" {
+					a.startTransfer(args)
+				} else {
+					a.execute(args, a.out)
+				}
 			}
 		case "5":
 			a.exportReport(jobs)
@@ -151,8 +171,10 @@ func (a *menuApp) run() int {
 			a.accounts()
 		case "7":
 			a.execute([]string{"source", "select-drive"}, a.out)
+		case "8":
+			a.configureTransfers()
 		default:
-			notice = "Choose a number from 0 to 7."
+			notice = "Choose a number from 0 to 8."
 			continue
 		}
 		if a.ctx.Err() != nil {
@@ -233,7 +255,7 @@ func (a *menuApp) newPlan() {
 			}
 			// Reuse run's account/summary confirmation; nothing uploads until yes.
 			clearPromptScreen(a.out)
-			a.execute([]string{"run", "--job", id, "--wait"}, a.out)
+			a.startTransfer(a.transferArgs("run", id))
 			return
 		}
 	}
@@ -250,6 +272,9 @@ func (a *menuApp) chooseJob(jobs []menuJob, unfinishedOnly bool) (menuJob, bool)
 		label := fmt.Sprintf("%q — %d/%d eligible completed, %d processing, %d skipped — %s (%s)", "/"+job.Folder, job.Completed, job.Total-job.Skipped, job.Processing, job.Skipped, job.Created.Local().Format("2006-01-02 15:04"), job.ID[:8])
 		if !job.InventoryComplete && !job.Started {
 			label += " — inventory incomplete"
+		}
+		if job.Uncertain > 0 {
+			label += fmt.Sprintf(" — needs recovery (%d)", job.Uncertain)
 		}
 		if job.ExcludePersonalVault {
 			label += " — Vault excluded"

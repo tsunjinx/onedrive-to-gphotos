@@ -15,6 +15,7 @@ type menuJob struct {
 	ID, Folder, Problem                     string
 	Created                                 time.Time
 	Total, Completed, Processing, Skipped   int
+	Uncertain                               int
 	Incomplete, Started                     bool
 	InventoryComplete, ExcludePersonalVault bool
 	DriveID, GoogleSubject                  string
@@ -98,6 +99,9 @@ func loadMenuJob(file, id string) (menuJob, error) {
 		case "processing_failed":
 		default:
 			job.Incomplete = true
+		}
+		if item.State == "creating" {
+			job.Uncertain++
 		}
 		if item.State == "processing" {
 			job.Processing++

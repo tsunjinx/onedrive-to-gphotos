@@ -11,3 +11,5 @@ A transfer copies selected photos and videos from OneDrive through an encrypted 
 The use of information received from Google APIs will adhere to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including Limited Use requirements. This is an independent personal project and is not endorsed by Microsoft or Google.
 
 With the legacy rclone backend, opt-in `source scan --diagnostics` displays up to 16 KiB of source failure details in the terminal, which may contain folder/file names and provider account details. URLs and recognized credential fields are redacted, but review diagnostic text before sharing it. These details are held in memory, not written to a diagnostic file. Normal errors retain fixed sanitized categories.
+
+The menu remembers parallelism, batch size, retry count and video-wait choice in a private local `menu.json` file. These preferences contain no account credentials or media paths and are stored separately from OAuth configuration and encrypted migration journals. Recovery authorization is never saved as a preference; each uncertain job requires an explicit review/retry choice.

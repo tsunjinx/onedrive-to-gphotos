@@ -10,6 +10,8 @@ The existing test job remains rclone. Use a non-overlapping ordinary folder for 
 
 ## Recommended: use the menu
 
+Open **od2gp.command** on macOS or **od2gp.cmd** on Windows with a double-click. You can also use the terminal commands below.
+
 Open your project directory and run:
 
 ```sh
@@ -34,7 +36,7 @@ Each inspection shows up to 20 folders from the first 200 entries and up to 10 m
 
 Existing jobs stay bound to their original drive. To resume a job from another drive, select its original drive first; choose a separate new plan to migrate a different drive. Drive selection does not switch Microsoft accounts; use account setup/sign-in for account issues.
 
-Menu transfers use three parallel files, sequential creation batches of up to 50 items, video polling and five retries per operation. Use the commands below for custom retry options or explicit uncertain-creation reconciliation. Keep the same scope/storage/media checks described below. Running the launcher without arguments opens the menu in a terminal too; explicit `menu` also works in environments where terminal detection is unavailable.
+By default, menu transfers use three parallel files, sequential creation batches of up to 50 items, video polling and five retries per operation; option 8 remembers your overrides. Use the commands below for custom retry options or explicit uncertain-creation reconciliation. Keep the same scope/storage/media checks described below. Running the launcher without arguments opens the menu in a terminal too; explicit `menu` also works in environments where terminal detection is unavailable.
 
 The numbered sections below document the equivalent commands and validation steps.
 
@@ -236,3 +238,11 @@ Before a new or unstarted job uploads, the menu warns about potentially overlapp
 To change parallelism for the same job, stop the running command with Ctrl+C, wait for exit, then run `bash scripts/od2gp.sh resume --job JOB_ID --wait --workers 3`. Use 1 for serial operation or up to 8; do not create another plan. See [parallel transfer behavior](migration.md#parallel-transfers).
 
 Creation batches are enabled automatically for saved jobs. Use `--batch-size 1` to disable grouping for a diagnostic comparison, or the default `--batch-size 50`. Stop the old command before restarting the updated launcher on the same job. Batches flush after about two seconds, at the end of uploads or for staging pressure. Check HTTP status/operation in retry messages; 429 means rate limit or quota, whereas 5xx indicates a server error. Ambiguous creation outcomes retain staged bytes and require reviewed reconciliation. See [durable creation batches](migration.md#durable-creation-batches).
+
+## Remembered transfer settings and guided recovery
+
+Choose **8 — Transfer speed & options** to set speed once. Recommended resets to 3 parallel files, batches up to 50, five temporary retries and video waiting. Gentle changes parallelism to 1; Faster changes it to 6. These speed changes keep your other choices. Custom accepts 1-8 parallel files, batch size 1-50, retries 0-10 and whether to wait for video processing. Press Enter to keep a custom value, or type `b` to cancel without saving. Back/EOF/failed saving preserves your previous choices.
+
+Preferences are saved in a separate private `menu.json` under the user od2gp configuration directory. It contains no account credentials. On the next launch, the menu displays and reuses these values automatically for New migration and Continue. Source scope, account bindings and staging cap remain those of the saved job. Explicit terminal commands retain their own flags/defaults.
+
+A job with uncertain creation results is marked **needs recovery**. Choose Continue, select that job, then either review progress, explicitly retry uncertain items from verified original files, or go back. The retry choice applies to that run only; it is never saved as an automatic preference. Keep original encrypted staging and job keys. Ctrl+C exits with saved progress; reopen the menu and select Continue. No sign-in or media transfer starts simply from opening the menu or changing settings.

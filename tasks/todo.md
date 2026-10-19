@@ -6,6 +6,7 @@ Updated 2026-10-19. See [the current plan](plan.md), [operating instructions](..
 - [x] Metadata inventory, encrypted SQLite/staging, plan/run/resume/status/report implemented.
 - [x] Google resumable uploads, video polling and bounded retries implemented.
 - [x] Interactive menu with connection checks, guided preview/start, numbered saved jobs, progress/report export and account setup implemented.
+- [x] Remembered menu speed/custom options, explicit guided recovery and desktop menu launchers; no worker/batch/reconciliation flags needed for normal interactive use.
 - [x] Metadata-only drive contents preview before saving selection, with folder inspection, another-drive and cancellation choices.
 - [x] Explicit OneDrive drive picker in menu option 7, account submenu and new-migration flow; checked encrypted configuration replacement and original-job drive binding preserved.
 - [x] Automated race tests, vet and Windows/macOS cross-builds pass.

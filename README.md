@@ -10,6 +10,10 @@ Go tests, race checks, vet and cross-builds for Windows x64 and both macOS archi
 
 ## Start with the interactive menu
 
+Double-click **od2gp.command** on macOS or **od2gp.cmd** on Windows to open the menu. The source launchers build the current code before starting.
+
+Choose **8 — Transfer speed & options** once: Recommended uses 3 parallel files, Gentle uses 1, Faster uses 6, and Custom lets you choose up to 8 plus batch size, retries and video waiting. Your choices are remembered on this computer and used by both New migration and Continue; no transfer command flags are needed. Jobs needing creation recovery are marked **needs recovery** and offer a review/retry/back menu. Recovery always requires a new explicit choice for that job.
+
 From the project directory:
 
 ```sh
@@ -22,7 +26,7 @@ Windows PowerShell:
 .\scripts\od2gp.ps1 menu
 ```
 
-Choose a number to check both connections, preview a new migration, continue a saved job, view progress, export a report or reconnect accounts. **2** asks which OneDrive drive to use before asking for its folder; **7** changes the selected drive directly. Drive choices show numbered names and mark the current drive. After choosing one, review its folders and sample photo/video filenames: **1** uses it, **2** tries another drive, **3** inspects a folder and **0** cancels without changing the saved drive. Saved jobs show their folder and progress; you do not need to copy job IDs. Press Enter to accept the suggested choice. New jobs still ask for confirmation before uploading. Continuing a job uses three parallel files, video polling and the default five retries per file.
+Choose a number to check both connections, preview a new migration, continue a saved job, view progress, export a report or reconnect accounts. **2** asks which OneDrive drive to use before asking for its folder; **7** changes the selected drive directly. Drive choices show numbered names and mark the current drive. After choosing one, review its folders and sample photo/video filenames: **1** uses it, **2** tries another drive, **3** inspects a folder and **0** cancels without changing the saved drive. Saved jobs show their folder and progress; you do not need to copy job IDs. Press Enter to accept the suggested choice. New jobs still ask for confirmation before uploading. Continuing a job reuses the saved transfer settings; the initial defaults are three parallel files, video polling and five retries.
 
 Launching without arguments also opens the menu when both input and output are a terminal. Redirected/piped no-argument invocations retain help/list output. Existing commands remain available below.
 

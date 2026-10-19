@@ -43,7 +43,7 @@ func TestMenuPlansAndConfirmsWithoutLosingBufferedAnswers(t *testing.T) {
 	if code := app.run(); code != 0 {
 		t.Fatalf("menu failed: code=%d %s", code, errOut.String())
 	}
-	want := [][]string{{"source", "select-drive"}, {"plan", "--source", "/Pictures/Trip", "--cache-gib", "30"}, {"run", "--job", id, "--wait"}}
+	want := [][]string{{"source", "select-drive"}, {"plan", "--source", "/Pictures/Trip", "--cache-gib", "30"}, {"run", "--job", id, "--wait", "--workers", "3", "--batch-size", "50", "--retries", "5"}}
 	if !reflect.DeepEqual(calls, want) {
 		t.Fatalf("wrong commands: %#v", calls)
 	}
@@ -85,7 +85,7 @@ func TestMenuChoosesSavedJobWithoutTypingID(t *testing.T) {
 		if started {
 			command = "resume"
 		}
-		if !reflect.DeepEqual(called, []string{command, "--job", id, "--wait"}) {
+		if !reflect.DeepEqual(called, []string{command, "--job", id, "--wait", "--workers", "3", "--batch-size", "50", "--retries", "5"}) {
 			t.Fatalf("wrong continuation: %#v", called)
 		}
 	}
@@ -255,5 +255,31 @@ func TestMenuSetupDoesNotConsumeFollowingMenuInput(t *testing.T) {
 		}}
 	if code := app.run(); code != 0 || calls != 1 {
 		t.Fatalf("setup swallowed menu answers: %d calls=%d %s", code, calls, errOut.String())
+	}
+}
+
+func TestMenuDetectsUncertainItemsFromEncryptedJournal(t *testing.T) {
+	keyring.MockInit()
+	root := t.TempDir()
+	id := strings.Repeat("e", 32)
+	key, err := journal.Key(id, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "od2gp", "jobs", id, "progress.db")
+	store, err := journal.Open(file, key, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(0, "job", migration.Meta{ID: id, InventoryComplete: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Save(1, "creating", migration.Item{State: "creating"}); err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+	job, err := loadMenuJob(file, id)
+	if err != nil || job.Uncertain != 1 || !job.Started || !job.Incomplete {
+		t.Fatalf("recovery state not detected: %+v %v", job, err)
 	}
 }
