@@ -82,6 +82,14 @@ func (e *Engine) scheduleRetry(ctx context.Context, meta *Meta, api *googlephoto
 	if uncertain || attempt >= e.MaxRetries {
 		return original
 	}
-	fmt.Fprintf(e.Progress, "Temporary Google Photos failure; retry %d/%d for this file.\n", attempt+1, e.MaxRetries)
+	detail := "network interruption"
+	if api != nil {
+		detail = api.Error()
+	}
+	var itemError *googlephotos.ItemError
+	if errors.As(original, &itemError) {
+		detail = itemError.Error()
+	}
+	fmt.Fprintf(e.Progress, "Temporary Google Photos failure: %s; retry %d/%d for this operation.\n", detail, attempt+1, e.MaxRetries)
 	return e.awaitRetry(ctx, meta)
 }

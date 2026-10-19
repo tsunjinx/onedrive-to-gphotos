@@ -27,8 +27,8 @@ Usage:
   od2gp doctor
   od2gp privacy
   od2gp plan --source /Pictures --cache-gib 30
-  od2gp run --job JOB_ID [--wait] [--retries N] [--workers 1-8]
-  od2gp resume --job JOB_ID [--wait] [--retries N] [--workers 1-8]
+  od2gp run --job JOB_ID [--wait] [--retries N] [--workers 1-8] [--batch-size 1-50]
+  od2gp resume --job JOB_ID [--wait] [--retries N] [--workers 1-8] [--batch-size 1-50]
   od2gp status --job JOB_ID
   od2gp report --job JOB_ID --format csv
   od2gp source check

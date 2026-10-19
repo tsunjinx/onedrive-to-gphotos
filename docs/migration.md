@@ -52,7 +52,7 @@ If a network interruption occurs during destination creation, Google may have cr
 bash scripts/od2gp.sh resume --job JOB_ID --reconcile
 ```
 
-The CLI verifies the encrypted staged content's hash and retries the same bytes. Google documents that identical media bytes resolve to the same media ID, but real reconciliation behavior still needs verification. Normal resume stops at this state rather than silently claiming success or retrying uncertain creation.
+The CLI verifies the encrypted staged content's hash and retries the same bytes. Google documents that identical media bytes resolve to the same media ID, and the owner has exercised single-item reconciliation successfully; multi-item reconciliation still needs live verification. Normal resume stops at this state rather than silently claiming success or retrying uncertain creation.
 
 Temporary Google Photos failures now receive up to five automatic retries per file. This covers HTTP 429, HTTP 5xx and recognized network interruptions during recoverable operations. Delays increase from 30 seconds to 1, 2, 4 and 5 minutes, with a small random addition. A longer `Retry-After` always takes precedence. The pause is saved before waiting and survives cancellation or restart; resume waits for a saved pause before transferring. A pause longer than 15 minutes stops the command and prints when to resume. Retry limits reset for each file and each new invocation.
 
@@ -83,7 +83,7 @@ A processing failure is reported separately. Exit codes: 0 finished (possibly wi
 
 ## Current limits
 
-Transfers use three workers by default (`--workers 1-8`); media creation requests are sequential and contain one item. Efficient creation batching and complete destination-library deduplication are not implemented. The menu offers saved jobs for continuation. Supported files are selected by known extensions; Google makes the final format/codec validation. Source version checks compare stable item ID, size, modification time and backend metadata. Native Graph includes eTag/cTag values; legacy rclone uses its exposed hashes. A saved job retains its backend, so these different version formats are never silently mixed. New Graph jobs also bind to the Microsoft account and OAuth client.
+Transfers use three workers by default (`--workers 1-8`); media creation requests are sequential and batch up to 50 items. Complete destination-library deduplication is not implemented. The menu offers saved jobs for continuation. Supported files are selected by known extensions; Google makes the final format/codec validation. Source version checks compare stable item ID, size, modification time and backend metadata. Native Graph includes eTag/cTag values; legacy rclone uses its exposed hashes. A saved job retains its backend, so these different version formats are never silently mixed. New Graph jobs also bind to the Microsoft account and OAuth client.
 
 ## Parallel transfers
 
@@ -97,4 +97,16 @@ Stop an existing run with Ctrl+C and wait for it to exit before starting the upd
 
 All workers share the job's staging cap, including files retained after interruption. The scheduler reserves encrypted sizes before starting work and reduces concurrency when files cannot fit together. It also reserves available disk space for pending writes and leaves 128 MiB for the journal. Google library creation stays sequential, as recommended in [Google's upload guidance](https://developers.google.com/photos/library/guides/upload-media); upload bytes may overlap. Google retry pauses are shared and persisted. On an unrecoverable error or cancellation, dispatch stops and in-flight workers finish stopping before the command exits. Uncertain destination creation still requires explicit reconciliation.
 
-Parallelism does not speed up the initial inventory or guarantee a particular throughput. Network bandwidth, provider throttling, encryption and sequential media creation can limit gains. Start with three workers and measure a representative photo/video trial before increasing it. Creation batching remains a follow-up.
+Parallelism does not speed up the initial inventory or guarantee a particular throughput. Network bandwidth, provider throttling, encryption and sequential media creation can limit gains. Start with three workers and measure a representative photo/video trial before increasing it. Creation batches reduce request count, but live throughput still needs measurement.
+
+## Durable creation batches
+
+Transfers now decouple upload workers from one sequential batch committer. The workers persist each returned upload token in the existing encrypted journal before making themselves available for another file. The committer sends at most 50 items; choose `--batch-size 1-50` on `run` or `resume` (default 50). A partial batch is sent after about two seconds of queue time, when no uploads remain, or when staging space must be freed. Slow files therefore cannot keep the last few tokens waiting indefinitely. Google provider pauses and an in-flight creation request can extend actual waiting time. An interrupted queue is rebuilt from the saved item records on resume.
+
+```bash
+bash scripts/od2gp.sh resume --job JOB_ID --wait --workers 3 --batch-size 50
+```
+
+Before dispatch, the complete batch is atomically marked `creating`. Responses are handled per item: successful IDs are atomically saved before staging cleanup; explicit rejections keep the upload token for retry or review. Temporary item statuses retry only the rejected subset. Missing/mismatched results remain uncertain; known successes are retained. A batch with a lost response, HTTP 5xx or ambiguous network error is never blindly retried, even with `--reconcile`. Explicit reconciliation verifies and re-uploads the original staged bytes for the uncertain items. Keep job keys and staged files until recovery succeeds.
+
+Retry messages now identify HTTP status and operation (upload start/chunk/query, media creation or media status), using fixed categories rather than raw provider messages or signed URLs. `Create batch` lines show item count and request duration. No provider tokens are printed. Batching does not remove upload/status requests from API quota and does not guarantee a particular speedup.

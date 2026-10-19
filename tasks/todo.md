@@ -1,6 +1,6 @@
 # Current work and acceptance checklist
 
-Updated 2026-10-18. See [the current plan](plan.md), [operating instructions](../docs/runbook.md) and [validation evidence](review.md). The checklist below separates implementation from live acceptance.
+Updated 2026-10-19. See [the current plan](plan.md), [operating instructions](../docs/runbook.md) and [validation evidence](review.md). The checklist below separates implementation from live acceptance.
 
 - [x] Source launchers, rclone setup and Google authentication implemented; owner reports both account checks working.
 - [x] Metadata inventory, encrypted SQLite/staging, plan/run/resume/status/report implemented.
@@ -17,21 +17,28 @@ Updated 2026-10-18. See [the current plan](plan.md), [operating instructions](..
 - [x] Owner reached native Graph scanning and saved a native root job; live transfer acceptance remains pending.
 - [x] Add Personal Vault exclusion to the menu for new root plans and recovery of incomplete root jobs; require explicit consent, persist the choice and show the excluded scope before uploads.
 - [x] Warn when a new or unstarted job overlaps existing migration scope; independent job histories cannot recognize each other's completed uploads.
-- [ ] Next live check: recover native job `54f77861b717b5e67baa2b15312eb09b` with an explicit Vault decision; review overlap with legacy job `84f8505d28b7ff00c8aab99f1c69533d` (owner reports 13 completed items) before approving more uploads. Then benchmark a non-overlapping native trial.
+- [x] Owner continued native job `54f77861b717b5e67baa2b15312eb09b` through the menu, completed inventory with Vault excluded and started parallel photo uploads. Overlapping legacy history remains independent.
 - [x] Add bounded parallel file transfers (default 3, range 1-8), shared staging/disk reservations, serial media creation and shared Google retry pauses.
-- [ ] Benchmark native parallel throughput and per-stage latency, then add sequential Google creation batches if creation remains the bottleneck.
+- [x] Sequential creation batches with durable token queues, per-item outcomes and timer/end/staging-pressure flushes.
+- [x] HTTP status/operation diagnostics for retry messages, with safe fixed error categories and batch request timings.
+- [ ] Benchmark native parallel-plus-batch throughput and remaining per-stage latency; verify actual multi-item recovery.
 - [ ] Determine whether Personal Vault contains media needing separate migration; its inaccessible contents have unknown count/size and are outside this job.
 - [ ] Check current free destination/local storage, review the completed preview and conduct a short controlled trial within that same root job.
-- [ ] Live photo/video trial: compare eligible counts; inspect dates, orientation, video playback/audio and READY status.
+- [ ] Live photo/video trial: compare eligible counts; inspect dates, orientation, metadata, video playback/audio and READY status.
+  - [x] Owner verified that uploaded photos retain their metadata in Google Photos.
+  - [x] Video `IMG_0929.mov` uploaded and created with full metadata preserved (job `3b7824a2d3a0943945ab5d9d687118ab`). Google still reports it as processing; READY, playback and audio checks remain.
+  - [ ] Poll job `3b7824a2d3a0943945ab5d9d687118ab` with `resume` until the video reports READY, then verify playback and audio.
 - [ ] Interrupt/resume that same job; verify confirmed photos are skipped, created videos are polled by saved media ID, and unfinished uploads recover without repeating confirmed items.
 - [ ] Validate uncertain creation recovery: normal resume pauses, explicit reconciliation handles the identical staged bytes, and unresolved items remain visible in reports.
+  - [x] Exercised live: a spurious HTTP 503 during `batchCreate` left the item uncertain; `resume --reconcile` verified the staged hash, re-sent identical bytes and creation succeeded (job `3b7824a2d3a0943945ab5d9d687118ab`).
+  - [ ] Verify that a normal `resume` (without `--reconcile`) stops for reconciliation and that unresolved outcomes stay visible in reports.
 - [ ] Run a larger non-overlapping folder or continue the same full-scope job; record throughput, disk use and report results.
 - [ ] Complete the approximately 700 GB migration and reconcile all eligible/skipped/failed items.
 - [ ] Native Windows/macOS credential refresh/runtime checks and disposable-VM hard-power-off acceptance.
 
 # Detailed acceptance gates
 
-The original acceptance gates remain below until every listed condition is validated. An unchecked gate does not mean its implementation is absent. File names are planning references; actual module layout is recorded in the plan and review. Creation batching remains a follow-up; automatic OS boot launch is outside the current behavior. Tests cannot replace the required real-account and native-platform checks.
+The original acceptance gates remain below until every listed condition is validated. An unchecked gate does not mean its implementation is absent. File names are planning references; actual module layout is recorded in the plan and review. Creation batching is implemented; automatic OS boot launch is outside the current behavior. Tests cannot replace the required real-account and native-platform checks.
 
 - [ ] 1. Bootstrap native CLI and CI build matrix.
   - Acceptance: help/version run on Windows x64 and both macOS architectures.

@@ -164,7 +164,11 @@ type Record struct {
 	Value any
 }
 
-func (s *Store) SaveBatch(records []Record) error {
+func (s *Store) SaveBatch(records []Record) error { return s.saveRecords(records, false) }
+
+// SaveUpdates atomically checkpoints a group of encrypted transfer records.
+func (s *Store) SaveUpdates(records []Record) error { return s.saveRecords(records, true) }
+func (s *Store) saveRecords(records []Record, update bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -180,7 +184,11 @@ func (s *Store) SaveBatch(records []Record) error {
 			return err
 		}
 		sealed := s.aead.Seal(nonce, nonce, data, []byte(fmt.Sprintf("%d:%s", record.ID, record.State)))
-		if _, err := tx.Exec("INSERT INTO records(id,state,data) VALUES(?,?,?)", record.ID, record.State, sealed); err != nil {
+		query := "INSERT INTO records(id,state,data) VALUES(?,?,?)"
+		if update {
+			query += " ON CONFLICT(id) DO UPDATE SET state=excluded.state,data=excluded.data"
+		}
+		if _, err := tx.Exec(query, record.ID, record.State, sealed); err != nil {
 			return err
 		}
 	}

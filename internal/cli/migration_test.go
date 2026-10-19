@@ -161,3 +161,13 @@ func TestWorkerFlagValidationPrecedesJobAccess(t *testing.T) {
 		}
 	}
 }
+
+func TestBatchFlagValidationPrecedesJobAccess(t *testing.T) {
+	for _, tc := range []struct{ command, value, want string }{{"resume", "0", "between 1 and 50"}, {"run", "51", "between 1 and 50"}, {"plan", "3", "supported by run and resume"}} {
+		var out, errOut bytes.Buffer
+		code := migrationCommand(context.Background(), tc.command, []string{"--batch-size", tc.value}, strings.NewReader(""), &out, &errOut, func(string) string { return "" }, t.TempDir())
+		if code != 2 || !strings.Contains(errOut.String(), tc.want) {
+			t.Fatalf("invalid batch accepted: %d %s", code, errOut.String())
+		}
+	}
+}

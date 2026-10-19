@@ -34,7 +34,7 @@ Each inspection shows up to 20 folders from the first 200 entries and up to 10 m
 
 Existing jobs stay bound to their original drive. To resume a job from another drive, select its original drive first; choose a separate new plan to migrate a different drive. Drive selection does not switch Microsoft accounts; use account setup/sign-in for account issues.
 
-Menu transfers use three parallel files, video polling and five retries per file. Use the commands below for custom retry options or explicit uncertain-creation reconciliation. Keep the same scope/storage/media checks described below. Running the launcher without arguments opens the menu in a terminal too; explicit `menu` also works in environments where terminal detection is unavailable.
+Menu transfers use three parallel files, sequential creation batches of up to 50 items, video polling and five retries per operation. Use the commands below for custom retry options or explicit uncertain-creation reconciliation. Keep the same scope/storage/media checks described below. Running the launcher without arguments opens the menu in a terminal too; explicit `menu` also works in environments where terminal detection is unavailable.
 
 The numbered sections below document the equivalent commands and validation steps.
 
@@ -234,3 +234,5 @@ For a new drive-root (`/`) migration, or Continue on an incomplete root job with
 Before a new or unstarted job uploads, the menu warns about potentially overlapping saved jobs. Separate jobs do not share completed-file history. Enter `yes` only if you intend to proceed despite possible duplicates; otherwise use Continue on the original job. Cancelling keeps saved progress and starts no uploads.
 
 To change parallelism for the same job, stop the running command with Ctrl+C, wait for exit, then run `bash scripts/od2gp.sh resume --job JOB_ID --wait --workers 3`. Use 1 for serial operation or up to 8; do not create another plan. See [parallel transfer behavior](migration.md#parallel-transfers).
+
+Creation batches are enabled automatically for saved jobs. Use `--batch-size 1` to disable grouping for a diagnostic comparison, or the default `--batch-size 50`. Stop the old command before restarting the updated launcher on the same job. Batches flush after about two seconds, at the end of uploads or for staging pressure. Check HTTP status/operation in retry messages; 429 means rate limit or quota, whereas 5xx indicates a server error. Ambiguous creation outcomes retain staged bytes and require reviewed reconciliation. See [durable creation batches](migration.md#durable-creation-batches).

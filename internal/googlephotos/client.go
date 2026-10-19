@@ -33,8 +33,9 @@ type Media struct {
 	} `json:"mediaMetadata"`
 }
 type APIError struct {
-	Code    int
-	RetryAt time.Time
+	Code      int
+	Operation string
+	RetryAt   time.Time
 }
 
 // ConnectionError deliberately excludes request URLs and provider details.
@@ -45,7 +46,18 @@ func (*ConnectionError) Error() string {
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("Google Photos request failed (HTTP %d); progress is saved", e.Code)
+	operation := "request"
+	switch e.Operation {
+	case "upload start", "upload chunk", "upload query", "media creation", "media status":
+		operation = e.Operation
+	}
+	category := ""
+	if e.Code == 429 {
+		category = "; rate limit or quota"
+	} else if e.Code >= 500 {
+		category = "; server error"
+	}
+	return fmt.Sprintf("Google Photos %s failed (HTTP %d%s); progress is saved", operation, e.Code, category)
 }
 func (c Client) request(ctx context.Context, method, address string, headers map[string]string, body []byte) (http.Header, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, method, address, bytes.NewReader(body))
@@ -76,7 +88,18 @@ func (c Client) request(ctx context.Context, method, address string, headers map
 		} else if date, err := http.ParseTime(resp.Header.Get("Retry-After")); err == nil && date.After(when) {
 			when = date
 		}
-		return resp.Header, nil, &APIError{Code: resp.StatusCode, RetryAt: when}
+		operation := "upload chunk"
+		switch {
+		case address == base+"uploads":
+			operation = "upload start"
+		case address == base+"mediaItems:batchCreate":
+			operation = "media creation"
+		case method == "GET":
+			operation = "media status"
+		case headers["X-Goog-Upload-Command"] == "query":
+			operation = "upload query"
+		}
+		return resp.Header, nil, &APIError{Code: resp.StatusCode, RetryAt: when, Operation: operation}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
@@ -145,33 +168,11 @@ func (c Client) Chunk(ctx context.Context, s Session, offset int64, data []byte,
 	return token, nil
 }
 func (c Client) Create(ctx context.Context, token, name string) (Media, error) {
-	payload := struct {
-		Items []any `json:"newMediaItems"`
-	}{Items: []any{map[string]any{"simpleMediaItem": map[string]string{"uploadToken": token, "fileName": name}}}}
-	data, _ := json.Marshal(payload)
-	_, body, err := c.request(ctx, "POST", base+"mediaItems:batchCreate", map[string]string{"Content-Type": "application/json"}, data)
+	results, err := c.CreateBatch(ctx, []NewItem{{Token: token, Name: name}})
 	if err != nil {
 		return Media{}, err
 	}
-	var result struct {
-		Results []struct {
-			Status struct {
-				Code int `json:"code"`
-			} `json:"status"`
-			Media Media `json:"mediaItem"`
-		} `json:"newMediaItemResults"`
-	}
-	if json.Unmarshal(body, &result) != nil || len(result.Results) != 1 {
-		return Media{}, errors.New("invalid media creation response; outcome uncertain")
-	}
-	item := result.Results[0]
-	if item.Status.Code != 0 {
-		return Media{}, fmt.Errorf("Google rejected media creation (status %d)", item.Status.Code)
-	}
-	if item.Media.ID == "" {
-		return Media{}, errors.New("media creation ID missing; outcome uncertain")
-	}
-	return item.Media, nil
+	return results[0].Media, results[0].Err
 }
 func (c Client) Get(ctx context.Context, id string) (Media, error) {
 	_, body, err := c.request(ctx, "GET", base+"mediaItems/"+url.PathEscape(id), nil, nil)

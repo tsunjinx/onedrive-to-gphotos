@@ -79,3 +79,32 @@ func TestJournalSurvivesAbruptProcessExit(t *testing.T) {
 		t.Fatalf("crash lost committed state: %v", err)
 	}
 }
+
+func TestSaveUpdatesIsAtomicAndEncrypted(t *testing.T) {
+	key := bytes.Repeat([]byte{9}, 32)
+	store, err := Open(filepath.Join(t.TempDir(), "job.db"), key, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Save(1, "uploaded", map[string]string{"token": "private-upload-token"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveUpdates([]Record{{ID: 1, State: "creating", Value: map[string]string{"token": "private-upload-token"}}, {ID: 2, State: "creating", Value: make(chan int)}}); err == nil {
+		t.Fatal("accepted invalid update")
+	}
+	var state string
+	if err := store.db.QueryRow("SELECT state FROM records WHERE id=1").Scan(&state); err != nil || state != "uploaded" {
+		t.Fatalf("partial batch committed: %s %v", state, err)
+	}
+	if err := store.SaveUpdates([]Record{{ID: 1, State: "creating", Value: map[string]string{"token": "private-upload-token"}}}); err != nil {
+		t.Fatal(err)
+	}
+	var data []byte
+	if err := store.db.QueryRow("SELECT data FROM records WHERE id=1").Scan(&data); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("private-upload-token")) {
+		t.Fatal("stored plaintext token")
+	}
+}

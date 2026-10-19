@@ -33,6 +33,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	excludeVault := flags.Bool("exclude-personal-vault", false, "explicitly omit inaccessible /Personal Vault from a root scan; saved with the job")
 	reconcile := flags.Bool("reconcile", false, "allow identical-byte retry of an uncertain creation")
 	wait := flags.Bool("wait", false, "check pending videos for up to 30 minutes")
+	batchSize := flags.Int("batch-size", 50, "maximum items per sequential Google creation batch (1-50)")
 	workers := flags.Int("workers", 3, "parallel file transfers (1-8); library creation remains sequential")
 	retries := flags.Int("retries", 5, "automatic retries per file for temporary Google failures (0-10)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
@@ -48,6 +49,20 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	}
 	if *workers < 1 || *workers > 8 {
 		fmt.Fprintln(errOut, "--workers must be between 1 and 8")
+		return 2
+	}
+	if *batchSize < 1 || *batchSize > 50 {
+		fmt.Fprintln(errOut, "--batch-size must be between 1 and 50")
+		return 2
+	}
+	batchSet := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "batch-size" {
+			batchSet = true
+		}
+	})
+	if batchSet && command != "run" && command != "resume" {
+		fmt.Fprintln(errOut, "--batch-size is supported by run and resume")
 		return 2
 	}
 	workersSet := false
@@ -230,7 +245,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 			return fail(err)
 		}
 	}
-	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, MaxRetries: *retries, Workers: *workers}
+	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, MaxRetries: *retries, Workers: *workers, BatchSize: *batchSize}
 	if command == "plan" {
 		meta = migration.Meta{SourceBackend: backend, SourceSubject: microsoftSession.Account.Subject, SourceClient: microsoftSession.ClientID, ID: *jobID, Folder: selected, DriveID: driveID, GoogleSubject: session.Account.Subject, GoogleClient: session.ClientID, CacheBytes: *cacheGiB << 30, ExcludePersonalVault: *excludeVault, Created: time.Now().UTC()}
 		if err := store.Save(0, "job", meta); err != nil {

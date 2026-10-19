@@ -112,3 +112,5 @@ For a new drive-root (`/`) migration, or Continue on an incomplete root job with
 Before a new or unstarted job uploads, the menu warns about potentially overlapping saved jobs. Separate jobs do not share completed-file history. Enter `yes` only if you intend to proceed despite possible duplicates; otherwise use Continue on the original job. Cancelling keeps saved progress and starts no uploads.
 
 Transfers default to three parallel files, sharing the saved staging cap; Google library creation stays sequential. To change the worker count without changing jobs, stop the existing run, then use `bash scripts/od2gp.sh resume --job JOB_ID --wait --workers 3` (range 1–8). See [transfer details](docs/migration.md#parallel-transfers).
+
+Creation now uses one sequential batch committer, with up to 50 items per request (`--batch-size 1-50`, default 50). Token queues are saved in the encrypted journal and flush early for queue time, staging pressure or the end of uploads. Retry diagnostics identify HTTP status and operation. See [durable batches](docs/migration.md#durable-creation-batches).

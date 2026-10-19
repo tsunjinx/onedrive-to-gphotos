@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"od2gp/internal/googlephotos"
 	"od2gp/internal/staging"
@@ -40,6 +41,17 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	originalPhotos, originalProgress := e.Photos, e.Progress
+	_, batching := originalPhotos.(batchPhotos)
+	e.deferCreate = batching
+	defer func() { e.deferCreate = false }()
+	batchSize := e.BatchSize
+	if batchSize == 0 {
+		batchSize = 50
+	}
+	batchWait := e.BatchWait
+	if batchWait == 0 {
+		batchWait = 2 * time.Second
+	}
 	e.Progress = &lockedProgress{out: originalProgress}
 	e.Photos = &parallelPhotos{Photos: originalPhotos, e: e, meta: meta}
 	defer func() { e.Photos = originalPhotos; e.Progress = originalProgress }()
@@ -116,12 +128,51 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 	}
 	defer func() { close(tasks); workers.Wait() }()
 	fmt.Fprintf(e.Progress, "Transfers: up to %d parallel files; shared staging cap %.1f GiB. Library creation stays sequential.\n", e.Workers, float64(meta.CacheBytes)/(1<<30))
+	timer := time.NewTimer(batchWait)
+	defer timer.Stop()
+	var queue []transferTask
+	var queuedAt time.Time
+	var flush <-chan time.Time
+	release := func(id int64) error {
+		file := filepath.Join(e.Directory, fmt.Sprintf("stage-%d.bin", id))
+		var remaining int64
+		info, err := os.Lstat(file)
+		if err == nil {
+			remaining = info.Size()
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		used += remaining - allocated[id]
+		allocated[id] = remaining
+		return nil
+	}
+	commit := func() error {
+		err := e.commitBatch(ctx, meta, queue)
+		for _, task := range queue {
+			if releaseErr := release(task.id); releaseErr != nil && err == nil {
+				err = releaseErr
+			}
+		}
+		queue = nil
+		flush = nil
+		return err
+	}
+	if batching {
+		fmt.Fprintf(e.Progress, "Batch creation: up to %d items, maximum queue wait %s; flush early for staging space.\n", batchSize, batchWait)
+	}
 	active := 0
 	var firstErr error
-	for len(pending) > 0 || active > 0 {
+	for len(pending) > 0 || active > 0 || len(queue) > 0 {
 		if ctx.Err() != nil && firstErr == nil {
 			firstErr = context.Cause(ctx)
 			cancel(firstErr)
+		}
+		if firstErr == nil && len(queue) > 0 && (len(queue) >= batchSize || time.Since(queuedAt) >= batchWait || len(pending) == 0 && active == 0) {
+			if err := commit(); err != nil {
+				firstErr = err
+				cancel(firstErr)
+			}
+			continue
 		}
 		// Look for any fitting file, so a large waiting file cannot prevent existing
 		// staged files from finishing and releasing their reservations.
@@ -152,29 +203,57 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 			}
 			continue
 		}
+		if firstErr == nil && len(queue) > 0 && active < e.Workers && len(pending) > 0 {
+			if err := commit(); err != nil {
+				firstErr = err
+				cancel(firstErr)
+			}
+			continue
+		}
 		if active == 0 {
 			if firstErr != nil {
+				if cause := context.Cause(ctx); cause != nil {
+					return cause
+				}
 				return firstErr
 			}
 			return errors.New("staging capacity is occupied by saved files; no pending transfer fits")
 		}
-		result := <-results
+		var result transferResult
+		select {
+		case result = <-results:
+		case <-flush:
+			if firstErr == nil && len(queue) > 0 {
+				if err := commit(); err != nil {
+					firstErr = err
+					cancel(firstErr)
+				}
+			}
+			flush = nil
+			continue
+		}
 		active--
 		if result.err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("file %d: %w", result.task.id, result.err)
 			cancel(firstErr)
 		}
-		file := filepath.Join(e.Directory, fmt.Sprintf("stage-%d.bin", result.task.id))
-		var remaining int64
-		info, statErr := os.Lstat(file)
-		if statErr == nil {
-			remaining = info.Size()
-		} else if !errors.Is(statErr, os.ErrNotExist) && firstErr == nil {
-			firstErr = statErr
+		if result.err == nil && batching && result.task.item.State == "uploaded" {
+			if len(queue) == 0 {
+				queuedAt = time.Now()
+				timer.Reset(batchWait)
+				flush = timer.C
+			}
+			queue = append(queue, result.task)
+		} else if err := release(result.task.id); err != nil && firstErr == nil {
+			firstErr = err
 			cancel(firstErr)
 		}
-		used += remaining - allocated[result.task.id]
-		allocated[result.task.id] = remaining
+
+	}
+	if firstErr != nil {
+		if cause := context.Cause(ctx); cause != nil {
+			return cause
+		}
 	}
 	return firstErr
 }
@@ -233,4 +312,13 @@ func (p *parallelPhotos) Get(ctx context.Context, id string) (googlephotos.Media
 		return googlephotos.Media{}, err
 	}
 	return p.Photos.Get(ctx, id)
+}
+
+func (p *parallelPhotos) CreateBatch(ctx context.Context, items []googlephotos.NewItem) ([]googlephotos.CreateResult, error) {
+	p.createMu.Lock()
+	defer p.createMu.Unlock()
+	if err := p.gate(ctx); err != nil {
+		return nil, err
+	}
+	return p.Photos.(batchPhotos).CreateBatch(ctx, items)
 }

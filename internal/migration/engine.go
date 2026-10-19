@@ -28,16 +28,19 @@ type Photos interface {
 	Get(context.Context, string) (googlephotos.Media, error)
 }
 type Engine struct {
-	Store      *journal.Store
-	Source     Source
-	Photos     Photos
-	Directory  string
-	Progress   io.Writer
-	Reconcile  bool
-	MaxRetries int
-	Workers    int
-	retryMu    sync.Mutex
-	retryWait  func(context.Context, time.Duration) error
+	Store       *journal.Store
+	Source      Source
+	Photos      Photos
+	Directory   string
+	Progress    io.Writer
+	Reconcile   bool
+	MaxRetries  int
+	Workers     int
+	BatchSize   int
+	BatchWait   time.Duration
+	deferCreate bool
+	retryMu     sync.Mutex
+	retryWait   func(context.Context, time.Duration) error
 }
 
 func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
@@ -101,6 +104,12 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 	return e.Store.Save(0, "job", meta)
 }
 func (e *Engine) Run(ctx context.Context, meta *Meta) error {
+	if e.BatchSize < 0 || e.BatchSize > 50 {
+		return errors.New("batch size must be between 1 and 50 (or zero for default)")
+	}
+	if e.BatchWait < 0 {
+		return errors.New("batch wait must not be negative")
+	}
 	if e.Workers < 0 || e.Workers > 8 {
 		return errors.New("workers must be between 1 and 8 (or zero for serial default)")
 	}
@@ -346,6 +355,9 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 			}
 			return errors.New("upload token expired; resume to upload this unfinished file again")
 		}
+		if e.deferCreate {
+			return nil
+		}
 		item.State = "creating"
 		if err := save(); err != nil {
 			return err
@@ -353,7 +365,8 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 		media, err := e.Photos.Create(ctx, item.Token, path.Base(item.Path))
 		if err != nil {
 			var api *googlephotos.APIError
-			if errors.As(err, &api) && (api.Code == 401 || api.Code == 403 || api.Code == 429) {
+			var rejected *googlephotos.ItemError
+			if errors.As(err, &rejected) || errors.As(err, &api) && (api.Code == 401 || api.Code == 403 || api.Code == 429) {
 				item.State = "uploaded"
 				if saveErr := save(); saveErr != nil {
 					return saveErr
