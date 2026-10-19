@@ -33,7 +33,7 @@ func interactiveMenu(ctx context.Context, input io.Reader, out, errOut io.Writer
 	options, err := loadMenuOptions(root)
 	app.options = options
 	if err != nil {
-		app.startupNotice = err.Error() + ". Using recommended settings for now."
+		app.startupNotice = "Saved transfer settings could not be loaded. Using recommended settings; choose option 8 to replace them."
 	}
 	app.saveOptions = func(opts transferOptions) error { return saveMenuOptions(root, opts) }
 	app.jobs = func() ([]menuJob, error) { return loadMenuJobs(root) }
@@ -58,24 +58,25 @@ func (a *menuApp) execute(args []string, out io.Writer) int {
 	if args[0] == "run" || args[0] == "resume" {
 		switch code {
 		case 1:
-			fmt.Fprintln(a.out, "Transfer stopped. Review the message above; choose Continue to use the same saved job.")
+			fmt.Fprintln(a.out, a.t("Transfer stopped. Review the message above; choose Continue to use the same saved job."))
 		case 3:
-			fmt.Fprintln(a.out, "Videos are still processing. Choose Continue later to check them again.")
+			fmt.Fprintln(a.out, a.t("Videos are still processing. Choose Continue later to check them again."))
 		case 4:
-			fmt.Fprintln(a.out, "Some videos failed processing. View job progress or export a report for details.")
+			fmt.Fprintln(a.out, a.t("Some videos failed processing. View job progress or export a report for details."))
 		}
 	}
 	return code
 }
 
 func (a *menuApp) ask(prompt, fallback string) (string, error) {
+	prompt = a.t(prompt)
 	if err := a.ctx.Err(); err != nil {
 		return "", err
 	}
 	if fallback != "" {
-		fmt.Fprintf(a.out, "%s [%s]: ", prompt, fallback)
+		fmt.Fprintf(a.out, a.t("%s [%s]: "), prompt, fallback)
 	} else {
-		fmt.Fprintf(a.out, "%s: ", prompt)
+		fmt.Fprintf(a.out, a.t("%s: "), prompt)
 	}
 	line, err := readSetupLine(a.input)
 	if err != nil {
@@ -94,25 +95,25 @@ func (a *menuApp) run() int {
 			return 1
 		}
 		clearPromptScreen(a.out)
-		fmt.Fprintln(a.out, "OneDrive → Google Photos\nCopy photos and videos. OneDrive originals are kept.")
-		fmt.Fprintln(a.out, "Settings:", a.currentOptions().summary())
+		fmt.Fprintln(a.out, a.t("OneDrive → Google Photos\nCopy photos and videos. OneDrive originals are kept."))
+		fmt.Fprintln(a.out, a.t("Settings:"), a.optionsSummary())
 		if notice != "" {
-			fmt.Fprintln(a.out, notice)
+			fmt.Fprintln(a.out, a.t(notice))
 			notice = ""
 		}
 		jobs, err := a.jobs()
 		if err != nil {
-			fmt.Fprintln(a.errOut, err)
+			fmt.Fprintln(a.errOut, a.t(err.Error()))
 		}
 		defaultChoice := "1"
 		for _, job := range jobs {
 			if job.Problem == "" && job.Incomplete {
-				fmt.Fprintf(a.out, "\nReady to continue: %q (%d/%d eligible completed, %d processing)\n", "/"+job.Folder, job.Completed, job.Total-job.Skipped, job.Processing)
+				fmt.Fprintf(a.out, a.t("\nReady to continue: %q (%d/%d eligible completed, %d processing)\n"), "/"+job.Folder, job.Completed, job.Total-job.Skipped, job.Processing)
 				defaultChoice = "3"
 				break
 			}
 		}
-		fmt.Fprintln(a.out, "\n1) Check both account connections\n2) New migration (choose drive, then preview)\n3) Continue a saved migration\n4) View job progress\n5) Export a report\n6) Set up or reconnect accounts\n7) Choose OneDrive drive\n8) Transfer speed & options\n0) Exit")
+		fmt.Fprintln(a.out, a.t("\n1) Check both account connections\n2) New migration (choose drive, then preview)\n3) Continue a saved migration\n4) View job progress\n5) Export a report\n6) Set up or reconnect accounts\n7) Choose OneDrive drive\n8) Transfer speed & options\n9) Language / Ngôn ngữ\n0) Exit"))
 		choice, err := a.ask("Choose", defaultChoice)
 		if err != nil {
 			if a.ctx.Err() != nil {
@@ -173,8 +174,10 @@ func (a *menuApp) run() int {
 			a.execute([]string{"source", "select-drive"}, a.out)
 		case "8":
 			a.configureTransfers()
+		case "9":
+			a.configureLanguage()
 		default:
-			notice = "Choose a number from 0 to 8."
+			notice = "Choose a number from 0 to 9."
 			continue
 		}
 		if a.ctx.Err() != nil {
@@ -196,7 +199,7 @@ func (a *menuApp) checkConnections() {
 	}
 	google := a.execute([]string{"auth", "check", "google"}, a.out)
 	if one == 0 && google == 0 {
-		fmt.Fprintln(a.out, "Both connections work. You can plan or continue a migration.")
+		fmt.Fprintln(a.out, a.t("Both connections work. You can plan or continue a migration."))
 	}
 }
 
@@ -205,7 +208,7 @@ func (a *menuApp) newPlan() {
 		return
 	}
 	clearPromptScreen(a.out)
-	fmt.Fprintln(a.out, "Choose a OneDrive folder. / means the entire drive.\nA new plan has separate history; use Continue for an interrupted job.")
+	fmt.Fprintln(a.out, a.t("Choose a OneDrive folder. / means the entire drive.\nA new plan has separate history; use Continue for an interrupted job."))
 	folder, err := a.ask("OneDrive folder", "/Pictures")
 	if err != nil {
 		return
@@ -220,7 +223,7 @@ func (a *menuApp) newPlan() {
 		if err == nil && cache >= 1 && cache <= 1024 {
 			break
 		}
-		fmt.Fprintln(a.out, "Enter a whole number from 1 to 1024. The default is 30.")
+		fmt.Fprintln(a.out, a.t("Enter a whole number from 1 to 1024. The default is 30."))
 	}
 	planArgs := []string{"plan", "--source", folder, "--cache-gib", strconv.Itoa(cache)}
 	if normalizeMenuFolder(folder) == "" {
@@ -240,7 +243,7 @@ func (a *menuApp) newPlan() {
 		if id, ok := strings.CutPrefix(line, "Job: "); ok && migration.ValidID(id) {
 			jobs, err := a.jobs()
 			if err != nil {
-				fmt.Fprintln(a.errOut, "Cannot check existing migration history; plan is saved. Resolve job access before starting uploads.")
+				fmt.Fprintln(a.errOut, a.t("Cannot check existing migration history; plan is saved. Resolve job access before starting uploads."))
 				return
 			}
 			candidate := menuJob{ID: id, Folder: normalizeMenuFolder(folder)}
@@ -259,7 +262,7 @@ func (a *menuApp) newPlan() {
 			return
 		}
 	}
-	fmt.Fprintln(a.out, "Plan saved. Choose Continue from the menu when ready.")
+	fmt.Fprintln(a.out, a.t("Plan saved. Choose Continue from the menu when ready."))
 }
 
 func (a *menuApp) chooseJob(jobs []menuJob, unfinishedOnly bool) (menuJob, bool) {
@@ -269,26 +272,26 @@ func (a *menuApp) chooseJob(jobs []menuJob, unfinishedOnly bool) (menuJob, bool)
 			continue
 		}
 		choices = append(choices, job)
-		label := fmt.Sprintf("%q — %d/%d eligible completed, %d processing, %d skipped — %s (%s)", "/"+job.Folder, job.Completed, job.Total-job.Skipped, job.Processing, job.Skipped, job.Created.Local().Format("2006-01-02 15:04"), job.ID[:8])
+		label := fmt.Sprintf(a.t("%q — %d/%d eligible completed, %d processing, %d skipped — %s (%s)"), "/"+job.Folder, job.Completed, job.Total-job.Skipped, job.Processing, job.Skipped, job.Created.Local().Format("2006-01-02 15:04"), job.ID[:8])
 		if !job.InventoryComplete && !job.Started {
-			label += " — inventory incomplete"
+			label += a.t(" — inventory incomplete")
 		}
 		if job.Uncertain > 0 {
-			label += fmt.Sprintf(" — needs recovery (%d)", job.Uncertain)
+			label += fmt.Sprintf(a.t(" — needs recovery (%d)"), job.Uncertain)
 		}
 		if job.ExcludePersonalVault {
-			label += " — Vault excluded"
+			label += a.t(" — Vault excluded")
 		}
 		if job.Problem != "" {
-			label = job.ID[:8] + " — " + job.Problem
+			label = job.ID[:8] + " — " + a.t(job.Problem)
 		}
-		fmt.Fprintf(a.out, "%d) %s\n", len(choices), label)
+		fmt.Fprintf(a.out, a.t("%d) %s\n"), len(choices), label)
 	}
 	if len(choices) == 0 {
-		fmt.Fprintln(a.out, "No matching saved jobs. Choose Plan a new migration to begin.")
+		fmt.Fprintln(a.out, a.t("No matching saved jobs. Choose Plan a new migration to begin."))
 		return menuJob{}, false
 	}
-	fmt.Fprintln(a.out, "0) Back")
+	fmt.Fprintln(a.out, a.t("0) Back"))
 	for {
 		answer, err := a.ask("Choose a job", "1")
 		if err != nil || answer == "0" {
@@ -298,12 +301,12 @@ func (a *menuApp) chooseJob(jobs []menuJob, unfinishedOnly bool) (menuJob, bool)
 		if err == nil && number >= 1 && number <= len(choices) {
 			job := choices[number-1]
 			if job.Problem != "" {
-				fmt.Fprintln(a.out, job.Problem)
+				fmt.Fprintln(a.out, a.t(job.Problem))
 				continue
 			}
 			return job, true
 		}
-		fmt.Fprintln(a.out, "Choose one of the displayed job numbers.")
+		fmt.Fprintln(a.out, a.t("Choose one of the displayed job numbers."))
 	}
 }
 
@@ -322,7 +325,7 @@ func (a *menuApp) exportReport(jobs []menuJob) {
 		if format == "csv" || format == "json" {
 			break
 		}
-		fmt.Fprintln(a.out, "Enter csv or json.")
+		fmt.Fprintln(a.out, a.t("Enter csv or json."))
 	}
 	extension := format
 	if format == "json" {
@@ -335,9 +338,9 @@ func (a *menuApp) exportReport(jobs []menuJob) {
 	file, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
-			fmt.Fprintln(a.errOut, "That file already exists. Choose a different report name.")
+			fmt.Fprintln(a.errOut, a.t("That file already exists. Choose a different report name."))
 		} else {
-			fmt.Fprintln(a.errOut, "Cannot create that report; check the folder and permissions.")
+			fmt.Fprintln(a.errOut, a.t("Cannot create that report; check the folder and permissions."))
 		}
 		return
 	}
@@ -345,18 +348,18 @@ func (a *menuApp) exportReport(jobs []menuJob) {
 	closeErr := file.Close()
 	if code != 0 || closeErr != nil {
 		os.Remove(name)
-		fmt.Fprintln(a.errOut, "Report export failed; incomplete output was removed.")
+		fmt.Fprintln(a.errOut, a.t("Report export failed; incomplete output was removed."))
 		return
 	}
 	absolute, err := filepath.Abs(name)
 	if err != nil {
 		absolute = name
 	}
-	fmt.Fprintf(a.out, "Report saved: %q\n", absolute)
+	fmt.Fprintf(a.out, a.t("Report saved: %q\n"), absolute)
 }
 
 func (a *menuApp) accounts() {
-	fmt.Fprintln(a.out, "1) Configure Google client JSON\n2) Sign in to OneDrive\n3) Sign in to Google\n4) Check both connections\n5) Choose OneDrive drive\n0) Back")
+	fmt.Fprintln(a.out, a.t("1) Configure Google client JSON\n2) Sign in to OneDrive\n3) Sign in to Google\n4) Check both connections\n5) Choose OneDrive drive\n0) Back"))
 	choice, err := a.ask("Choose", "4")
 	if err != nil {
 		return
@@ -374,6 +377,6 @@ func (a *menuApp) accounts() {
 		a.execute([]string{"source", "select-drive"}, a.out)
 	case "0":
 	default:
-		fmt.Fprintln(a.out, "Choose a number from 0 to 5 next time.")
+		fmt.Fprintln(a.out, a.t("Choose a number from 0 to 5 next time."))
 	}
 }

@@ -12,24 +12,29 @@ import (
 )
 
 type transferOptions struct {
-	Workers    int  `json:"workers"`
-	BatchSize  int  `json:"batch_size"`
-	Retries    int  `json:"retries"`
-	WaitVideos bool `json:"wait_videos"`
+	Language   string `json:"language,omitempty"`
+	Workers    int    `json:"workers"`
+	BatchSize  int    `json:"batch_size"`
+	Retries    int    `json:"retries"`
+	WaitVideos bool   `json:"wait_videos"`
 }
 
 func defaultTransferOptions() transferOptions {
 	return transferOptions{Workers: 3, BatchSize: 50, Retries: 5, WaitVideos: true}
 }
 func (o transferOptions) valid() bool {
-	return o.Workers >= 1 && o.Workers <= 8 && o.BatchSize >= 1 && o.BatchSize <= 50 && o.Retries >= 0 && o.Retries <= 10
+	return (o.Language == "" || o.Language == "en" || o.Language == "vi") && o.Workers >= 1 && o.Workers <= 8 && o.BatchSize >= 1 && o.BatchSize <= 50 && o.Retries >= 0 && o.Retries <= 10
 }
-func (o transferOptions) summary() string {
+func (o transferOptions) localizedSummary(language string) string {
 	wait := "check videos once"
 	if o.WaitVideos {
 		wait = "wait for video processing"
 	}
-	return fmt.Sprintf("%d files at once | batch up to %d | %d retries | %s", o.Workers, o.BatchSize, o.Retries, wait)
+	return fmt.Sprintf(menuText(language, "%d files at once | batch up to %d | %d retries | %s"), o.Workers, o.BatchSize, o.Retries, menuText(language, wait))
+}
+func (a *menuApp) optionsSummary() string {
+	opts := a.currentOptions()
+	return opts.localizedSummary(opts.Language)
 }
 func loadMenuOptions(root string) (transferOptions, error) {
 	defaults := defaultTransferOptions()
@@ -101,13 +106,14 @@ func (a *menuApp) transferArgs(command, id string) []string {
 	return append(args, "--workers", strconv.Itoa(opts.Workers), "--batch-size", strconv.Itoa(opts.BatchSize), "--retries", strconv.Itoa(opts.Retries))
 }
 func (a *menuApp) startTransfer(args []string) {
-	fmt.Fprintln(a.out, "Transfer settings:", a.currentOptions().summary())
-	fmt.Fprintln(a.out, "Ctrl+C saves progress and exits. Open the menu and choose Continue to pick up this job later.")
+	fmt.Fprintln(a.out, a.t("Transfer settings:"), a.optionsSummary())
+	fmt.Fprintln(a.out, a.t("Ctrl+C saves progress and exits. Open the menu and choose Continue to pick up this job later."))
 	a.execute(args, a.out)
 }
 func (a *menuApp) transferNumber(label string, value, minimum, maximum int) (int, bool) {
+	label = a.t(label)
 	for {
-		answer, err := a.ask(fmt.Sprintf("%s (%d-%d, b to cancel)", label, minimum, maximum), strconv.Itoa(value))
+		answer, err := a.ask(fmt.Sprintf(a.t("%s (%d-%d, b to cancel)"), label, minimum, maximum), strconv.Itoa(value))
 		if err != nil || strings.EqualFold(answer, "b") {
 			return 0, false
 		}
@@ -115,13 +121,13 @@ func (a *menuApp) transferNumber(label string, value, minimum, maximum int) (int
 		if err == nil && number >= minimum && number <= maximum {
 			return number, true
 		}
-		fmt.Fprintf(a.out, "Enter a number from %d to %d.\n", minimum, maximum)
+		fmt.Fprintf(a.out, a.t("Enter a number from %d to %d.\n"), minimum, maximum)
 	}
 }
 func (a *menuApp) configureTransfers() {
-	fmt.Fprintln(a.out, "Transfer speed & options\nCurrent:", a.currentOptions().summary())
-	fmt.Fprintln(a.out, "1) Recommended: 3 files, batch 50, 5 retries, wait for videos\n2) Gentle: 1 file at once (try this if requests keep failing)\n3) Faster: 6 files at once\n4) Custom settings\n0) Back")
-	fmt.Fprintln(a.out, "Settings are remembered for New migration and Continue. Your saved folder and staging limit stay the same.")
+	fmt.Fprintln(a.out, a.t("Transfer speed & options\nCurrent:"), a.optionsSummary())
+	fmt.Fprintln(a.out, a.t("1) Recommended: 3 files, batch 50, 5 retries, wait for videos\n2) Gentle: 1 file at once (try this if requests keep failing)\n3) Faster: 6 files at once\n4) Custom settings\n0) Back"))
+	fmt.Fprintln(a.out, a.t("Settings are remembered for New migration and Continue. Your saved folder and staging limit stay the same."))
 	for {
 		choice, err := a.ask("Choose a preset", "0")
 		if err != nil || choice == "0" {
@@ -130,13 +136,15 @@ func (a *menuApp) configureTransfers() {
 		opts := a.currentOptions()
 		switch choice {
 		case "1":
+			language := opts.Language
 			opts = defaultTransferOptions()
+			opts.Language = language
 		case "2":
 			opts.Workers = 1
 		case "3":
 			opts.Workers = 6
 		case "4":
-			fmt.Fprintln(a.out, "Press Enter to keep a value, or type b to cancel without saving.")
+			fmt.Fprintln(a.out, a.t("Press Enter to keep a value, or type b to cancel without saving."))
 			opts = a.currentOptions()
 			var ok bool
 			if opts.Workers, ok = a.transferNumber("Files to upload at once", opts.Workers, 1, 8); !ok {
@@ -160,37 +168,37 @@ func (a *menuApp) configureTransfers() {
 				switch strings.ToLower(answer) {
 				case "b":
 					return
-				case "yes", "y":
+				case "yes", "y", "có", "co":
 					opts.WaitVideos = true
-				case "no", "n":
+				case "no", "n", "không", "khong":
 					opts.WaitVideos = false
 				default:
-					fmt.Fprintln(a.out, "Enter yes or no.")
+					fmt.Fprintln(a.out, a.t("Enter yes or no."))
 					continue
 				}
 				break
 			}
 		default:
-			fmt.Fprintln(a.out, "Choose a number from 0 to 4.")
+			fmt.Fprintln(a.out, a.t("Choose a number from 0 to 4."))
 			continue
 		}
 		if a.saveOptions != nil {
 			if err := a.saveOptions(opts); err != nil {
-				fmt.Fprintln(a.errOut, "Could not save transfer settings. Previous settings are kept; check local folder permissions and disk space.")
+				fmt.Fprintln(a.errOut, a.t("Could not save transfer settings. Previous settings are kept; check local folder permissions and disk space."))
 				return
 			}
 		}
 		a.options = opts
-		fmt.Fprintln(a.out, "Saved:", opts.summary())
+		fmt.Fprintln(a.out, a.t("Saved:"), opts.localizedSummary(opts.Language))
 		return
 	}
 }
 
 func (a *menuApp) confirmRecovery(job menuJob) bool {
-	fmt.Fprintf(a.out, "%d file(s) need creation recovery for this job. Google may already have accepted them before the response was lost.\n", job.Uncertain)
-	fmt.Fprintln(a.out, "Recovery verifies the retained original files, retries those uncertain items, then continues this same job. Confirmed completed files remain skipped.")
+	fmt.Fprintf(a.out, a.t("%d file(s) need creation recovery for this job. Google may already have accepted them before the response was lost.\n"), job.Uncertain)
+	fmt.Fprintln(a.out, a.t("Recovery verifies the retained original files, retries those uncertain items, then continues this same job. Confirmed completed files remain skipped."))
 	for {
-		fmt.Fprintln(a.out, "1) Review job progress first\n2) Retry uncertain items using the verified original files\n0) Back without retrying")
+		fmt.Fprintln(a.out, a.t("1) Review job progress first\n2) Retry uncertain items using the verified original files\n0) Back without retrying"))
 		choice, err := a.ask("Choose recovery action", "0")
 		if err != nil {
 			return false
@@ -203,7 +211,7 @@ func (a *menuApp) confirmRecovery(job menuJob) bool {
 		case "2":
 			return true
 		default:
-			fmt.Fprintln(a.out, "Choose 1, 2 or 0.")
+			fmt.Fprintln(a.out, a.t("Choose 1, 2 or 0."))
 		}
 	}
 }

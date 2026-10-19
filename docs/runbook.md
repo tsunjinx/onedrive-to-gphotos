@@ -246,3 +246,9 @@ Choose **8 — Transfer speed & options** to set speed once. Recommended resets 
 Preferences are saved in a separate private `menu.json` under the user od2gp configuration directory. It contains no account credentials. On the next launch, the menu displays and reuses these values automatically for New migration and Continue. Source scope, account bindings and staging cap remain those of the saved job. Explicit terminal commands retain their own flags/defaults.
 
 A job with uncertain creation results is marked **needs recovery**. Choose Continue, select that job, then either review progress, explicitly retry uncertain items from verified original files, or go back. The retry choice applies to that run only; it is never saved as an automatic preference. Keep original encrypted staging and job keys. Ctrl+C exits with saved progress; reopen the menu and select Continue. No sign-in or media transfer starts simply from opening the menu or changing settings.
+
+## English / Tiếng Việt
+
+Choose **9 — Language / Ngôn ngữ**, then **1 — English** or **2 — Tiếng Việt**. **0** keeps the current language. The selection applies immediately and is remembered in the existing private menu preferences for future launches. Older preference files without a language continue in English. Selecting a language preserves speed, batch, retry and video-wait values; Recommended does not reset language.
+
+The main menu and its guided job/settings/recovery/report/Vault/overlap pages are translated. Detailed provider/transfer output, delegated setup/drive commands and provider browser pages may still be English. Commands, account identities, paths, file contents and CSV/JSON report data retain their original values. Prompts requiring `yes` keep that explicit confirmation token; the video-wait option also accepts `có/co` and `không/khong`.
