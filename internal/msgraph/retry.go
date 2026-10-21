@@ -2,6 +2,7 @@ package msgraph
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -49,3 +50,51 @@ type RangeUnsupportedError struct{}
 
 func (*RangeUnsupportedError) Error() string         { return "source ignored the download range" }
 func (*RangeUnsupportedError) RestartDownload() bool { return true }
+
+// ConfigureRetry is called before starting workers. Both callbacks coordinate
+// with the owning job; they must be concurrency-safe and omit credentials.
+func (c *Client) ConfigureRetry(gate func(context.Context) error, persist func(time.Time) error) {
+	c.retryGate = gate
+	c.retryPause = persist
+}
+func (c Client) pauseRequestRetry(ctx context.Context, delay time.Duration, attempt int) error {
+	until := time.Now().Add(delay)
+	if c.retryPause != nil {
+		if err := c.retryPause(until); err != nil {
+			return err
+		}
+	}
+	if attempt >= 3 || delay > 15*time.Minute {
+		return &PauseError{Until: until}
+	}
+	if c.retryGate != nil {
+		return nil
+	} // Next request waits on the shared durable deadline.
+	wait := c.retryWait
+	if wait == nil {
+		wait = waitGraph
+	}
+	if err := wait(ctx, delay); err != nil {
+		return errors.Join(err, &PauseError{Until: until})
+	}
+	return nil
+}
+
+// Download retries must reopen and authenticate staging before writing again.
+// A staging write error never uses this type.
+type TemporaryDownloadError struct{ Until time.Time }
+
+func (e *TemporaryDownloadError) Error() string {
+	return "OneDrive download temporarily interrupted; retained encrypted chunks can be resumed"
+}
+func (e *TemporaryDownloadError) RetryTime() time.Time { return e.Until }
+func (*TemporaryDownloadError) SourceTemporary() bool  { return true }
+func (c Client) downloadFailure(header string) error {
+	until := time.Now().Add(graphRetryDelay(header, 0, time.Now()))
+	if c.retryPause != nil {
+		if err := c.retryPause(until); err != nil {
+			return err
+		}
+	}
+	return &TemporaryDownloadError{Until: until}
+}

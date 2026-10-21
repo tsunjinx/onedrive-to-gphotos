@@ -28,6 +28,14 @@ func (e *Engine) transferWithRetries(ctx context.Context, meta *Meta, id int64, 
 		if pauseErr := e.persistSourcePause(meta, err); pauseErr != nil {
 			return pauseErr
 		}
+		var sourceFailure interface{ SourceTemporary() bool }
+		if errors.As(err, &sourceFailure) && sourceFailure.SourceTemporary() {
+			if retryErr := e.scheduleRetry(ctx, meta, nil, attempt, false, err); retryErr != nil {
+				return retryErr
+			}
+			*item = committed
+			continue
+		}
 		var api *googlephotos.APIError
 		var connection *googlephotos.ConnectionError
 		retryable := errors.As(err, &connection)
@@ -85,6 +93,11 @@ func (e *Engine) scheduleRetry(ctx context.Context, meta *Meta, api *googlephoto
 	if uncertain || attempt >= e.MaxRetries {
 		return original
 	}
+	provider := "Google Photos"
+	var sourceFailure interface{ SourceTemporary() bool }
+	if errors.As(original, &sourceFailure) {
+		provider = "OneDrive"
+	}
 	detail := "network interruption"
 	if api != nil {
 		detail = api.Error()
@@ -93,7 +106,7 @@ func (e *Engine) scheduleRetry(ctx context.Context, meta *Meta, api *googlephoto
 	if errors.As(original, &itemError) {
 		detail = itemError.Error()
 	}
-	fmt.Fprintf(e.Progress, "Temporary Google Photos failure: %s; retry %d/%d for this operation.\n", detail, attempt+1, e.MaxRetries)
+	fmt.Fprintf(e.Progress, "Temporary %s failure: %s; retry %d/%d for this operation.\n", provider, detail, attempt+1, e.MaxRetries)
 	return e.awaitRetry(ctx, meta)
 }
 
@@ -108,4 +121,43 @@ func (e *Engine) persistSourcePause(meta *Meta, original error) error {
 		meta.RetryAt = until
 	}
 	return e.Store.Save(0, "job", meta)
+}
+
+func (e *Engine) bindSourceRetry(meta *Meta) {
+	if source, ok := e.Source.(interface {
+		ConfigureRetry(func(context.Context) error, func(time.Time) error)
+	}); ok {
+		source.ConfigureRetry(func(ctx context.Context) error {
+			e.retryMu.Lock()
+			defer e.retryMu.Unlock()
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if meta.RetryAt.IsZero() {
+				return nil
+			}
+			if e.MaxRetries == 0 && time.Now().Before(meta.RetryAt) {
+				return fmt.Errorf("provider requested a pause until %s", meta.RetryAt.Local().Format(time.RFC3339))
+			}
+			return e.awaitRetry(ctx, meta)
+		}, func(until time.Time) error {
+			e.retryMu.Lock()
+			defer e.retryMu.Unlock()
+			if until.After(meta.RetryAt) {
+				meta.RetryAt = until
+			}
+			return e.Store.Save(0, "job", meta)
+		})
+	}
+}
+
+// WaitForProviderPause is used before saved-job account preflight requests.
+func (e *Engine) WaitForProviderPause(ctx context.Context, meta *Meta) error {
+	if !time.Now().Before(meta.RetryAt) {
+		return nil
+	}
+	if e.MaxRetries == 0 {
+		return fmt.Errorf("provider requested a pause until %s", meta.RetryAt.Local().Format(time.RFC3339))
+	}
+	return e.awaitRetry(ctx, meta)
 }

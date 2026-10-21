@@ -44,6 +44,7 @@ type Engine struct {
 }
 
 func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
+	e.bindSourceRetry(meta)
 	// Discovery may be restarted only before any transfer has been allowed.
 	if meta.InventoryComplete {
 		return nil
@@ -118,6 +119,7 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 	return e.Store.Save(0, "job", meta)
 }
 func (e *Engine) Run(ctx context.Context, meta *Meta) error {
+	e.bindSourceRetry(meta)
 	if e.BatchSize < 0 || e.BatchSize > 50 {
 		return errors.New("batch size must be between 1 and 50 (or zero for default)")
 	}

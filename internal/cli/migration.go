@@ -40,7 +40,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	wait := flags.Bool("wait", false, "check pending videos for up to 30 minutes")
 	batchSize := flags.Int("batch-size", 50, "maximum items per sequential Google creation batch (1-50)")
 	workers := flags.Int("workers", 3, "parallel file transfers (1-8); library creation remains sequential")
-	retries := flags.Int("retries", 5, "automatic retries per file for temporary Google failures (0-10)")
+	retries := flags.Int("retries", 5, "automatic retries per file for temporary upload/download failures (0-10)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
@@ -180,7 +180,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 				return sourceErr
 			}
 			native.ExcludePersonalVault = excludePolicy
-			source = native
+			source = &native
 			microsoftSession = signedIn
 		} else {
 			legacy, sourceErr := sourceClient(ctx, getenv, root, errOut)
@@ -256,6 +256,10 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 		return 0
 	}
 	if command != "plan" {
+		pause := migration.Engine{Store: store, Progress: errOut, MaxRetries: *retries}
+		if err := pause.WaitForProviderPause(ctx, &meta); err != nil {
+			return fail(err)
+		}
 		if err := connect(); err != nil {
 			return fail(err)
 		}

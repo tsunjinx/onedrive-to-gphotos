@@ -3,6 +3,7 @@ package msgraph
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -83,5 +84,42 @@ func TestGraphLongPauseAndRetryDate(t *testing.T) {
 	})}, retryWait: func(context.Context, time.Duration) error { t.Fatal("long pause must stop"); return nil }}
 	if _, err := c.DefaultDrive(context.Background()); err == nil || calls != 1 {
 		t.Fatalf("long pause ignored: %v", err)
+	}
+}
+
+func TestNetworkRetryIsBoundedAndPauseIsSavedBeforeWait(t *testing.T) {
+	calls, waits, persisted := 0, 0, 0
+	c := Client{HTTP: &http.Client{Transport: transport(func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls < 3 {
+			return nil, io.ErrUnexpectedEOF
+		}
+		return response(`{"id":"drive"}`), nil
+	})}, retryWait: func(context.Context, time.Duration) error { waits++; return nil }}
+	c.ConfigureRetry(func(context.Context) error {
+		if calls > 0 && persisted != calls {
+			t.Fatal("request before durable pause")
+		}
+		waits++
+		return nil
+	}, func(time.Time) error { persisted++; return nil })
+	if _, err := c.DefaultDrive(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 || persisted != 2 || waits != 3 {
+		t.Fatalf("calls=%d pauses=%d waits=%d", calls, persisted, waits)
+	}
+}
+func TestRetryCheckpointFailureStopsRequests(t *testing.T) {
+	calls := 0
+	c := Client{HTTP: &http.Client{Transport: transport(func(*http.Request) (*http.Response, error) {
+		calls++
+		r := response("")
+		r.StatusCode = 429
+		return r, nil
+	})}}
+	c.ConfigureRetry(func(context.Context) error { return nil }, func(time.Time) error { return errors.New("journal write failed") })
+	if _, err := c.DefaultDrive(context.Background()); err == nil || calls != 1 {
+		t.Fatalf("continued without checkpoint: %v %d", err, calls)
 	}
 }

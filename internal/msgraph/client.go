@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +26,8 @@ type Client struct {
 	ExcludePersonalVault bool
 	retryWait            func(context.Context, time.Duration) error
 	downloadTransport    http.RoundTripper
+	retryGate            func(context.Context) error
+	retryPause           func(time.Time) error
 	downloadIdleTimeout  time.Duration
 }
 type Drive struct {
@@ -79,6 +80,11 @@ func (c Client) request(ctx context.Context, address string) (*http.Response, er
 		client.Timeout = 30 * time.Second
 	}
 	for attempt := 0; ; attempt++ {
+		if c.retryGate != nil {
+			if err := c.retryGate(ctx); err != nil {
+				return nil, err
+			}
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 		if err != nil {
 			return nil, errors.New("invalid Graph request")
@@ -91,29 +97,21 @@ func (c Client) request(ctx context.Context, address string) (*http.Response, er
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			return nil, errors.New("Microsoft Graph connection failed; saved progress is kept")
+			if err := c.pauseRequestRetry(ctx, graphRetryDelay("", attempt, time.Now()), attempt); err != nil {
+				return nil, err
+			}
+			continue
 		}
 		if !graphTemporary(resp.StatusCode) {
 			return resp, nil
 		}
-		if attempt >= 3 {
-			delay := graphRetryDelay(resp.Header.Get("Retry-After"), attempt, time.Now())
-			resp.Body.Close()
-			return nil, &PauseError{Until: time.Now().Add(delay)}
-		}
 		delay := graphRetryDelay(resp.Header.Get("Retry-After"), attempt, time.Now())
 		resp.Body.Close()
 		client.CloseIdleConnections()
-		if delay > 15*time.Minute {
-			return nil, &PauseError{Until: time.Now().Add(delay)}
+		if err := c.pauseRequestRetry(ctx, delay, attempt); err != nil {
+			return nil, err
 		}
-		wait := c.retryWait
-		if wait == nil {
-			wait = waitGraph
-		}
-		if err := wait(ctx, delay); err != nil {
-			return nil, errors.Join(err, &PauseError{Until: time.Now().Add(delay)})
-		}
+
 	}
 }
 func apiFailure(resp *http.Response) error {
@@ -406,6 +404,11 @@ func (c Client) Read(ctx context.Context, name string, offset int64, out io.Writ
 	if offset > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
 	}
+	if c.retryGate != nil {
+		if err := c.retryGate(ctx); err != nil {
+			return err
+		}
+	}
 	timer := time.AfterFunc(idle, cancel)
 	content, err := client.Do(req)
 	timer.Stop()
@@ -414,15 +417,20 @@ func (c Client) Read(ctx context.Context, name string, offset int64, out io.Writ
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		return errors.New("OneDrive download interrupted; saved progress is kept")
+		return c.downloadFailure("")
 	}
 	defer content.Body.Close()
+	if graphTemporary(content.StatusCode) {
+		return c.downloadFailure(content.Header.Get("Retry-After"))
+	}
 	if offset > 0 {
-		expected := "bytes " + strconv.FormatInt(offset, 10) + "-"
+		var start, end, total int64
+		header := content.Header.Get("Content-Range")
+		n, parseErr := fmt.Sscanf(header, "bytes %d-%d/%d", &start, &end, &total)
 		if content.StatusCode == 200 {
 			return &RangeUnsupportedError{}
 		}
-		if content.StatusCode != 206 || !strings.HasPrefix(content.Header.Get("Content-Range"), expected) {
+		if content.StatusCode != 206 || parseErr != nil || n != 3 || start != offset || end < start || total <= end || end != total-1 || header != fmt.Sprintf("bytes %d-%d/%d", start, end, total) {
 			return errors.New("source did not honor the download offset")
 		}
 	} else if content.StatusCode != 200 {
@@ -451,7 +459,7 @@ func (c Client) Read(ctx context.Context, name string, offset int64, out io.Writ
 			return nil
 		}
 		if readErr != nil || emptyReads >= 100 {
-			return errors.New("OneDrive content stream interrupted; saved progress is kept")
+			return c.downloadFailure("")
 		}
 	}
 
