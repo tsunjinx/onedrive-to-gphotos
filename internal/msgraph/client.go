@@ -27,6 +27,7 @@ type Client struct {
 	ExcludePersonalVault bool
 	retryWait            func(context.Context, time.Duration) error
 	downloadTransport    http.RoundTripper
+	downloadIdleTimeout  time.Duration
 }
 type Drive struct {
 	ID   string `json:"id"`
@@ -386,20 +387,29 @@ func (c Client) Read(ctx context.Context, name string, offset int64, out io.Writ
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
-	client := &http.Client{Timeout: 10 * time.Minute, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	client := &http.Client{Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 || !safeDownload(req.URL.String()) {
 			return errors.New("unsafe download redirect")
 		}
 		return nil
 	}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, location, nil)
+	downloadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	idle := c.downloadIdleTimeout
+	if idle <= 0 {
+		idle = 2 * time.Minute
+	}
+	req, err := http.NewRequestWithContext(downloadCtx, http.MethodGet, location, nil)
 	if err != nil {
 		return errors.New("invalid download request")
 	}
 	if offset > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
 	}
+	timer := time.AfterFunc(idle, cancel)
 	content, err := client.Do(req)
+	timer.Stop()
+	defer timer.Stop()
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -415,9 +425,31 @@ func (c Client) Read(ctx context.Context, name string, offset int64, out io.Writ
 	} else if content.StatusCode != 200 {
 		return errors.New("OneDrive content download failed")
 	}
-	_, err = io.Copy(out, content.Body)
-	if err != nil {
-		return errors.New("OneDrive content stream or staging write failed")
+	// Only network reads use the idle clock; slow local disk writes are not network stalls.
+	buffer := make([]byte, 64<<10)
+	emptyReads := 0
+	for {
+		timer.Reset(idle)
+		n, readErr := content.Body.Read(buffer)
+		timer.Stop()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if n > 0 {
+			emptyReads = 0
+			written, writeErr := out.Write(buffer[:n])
+			if writeErr != nil || written != n {
+				return errors.New("encrypted staging write failed; check local disk space")
+			}
+		} else {
+			emptyReads++
+		}
+		if readErr == io.EOF {
+			return nil
+		}
+		if readErr != nil || emptyReads >= 100 {
+			return errors.New("OneDrive content stream interrupted; saved progress is kept")
+		}
 	}
-	return nil
+
 }
