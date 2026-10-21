@@ -43,3 +43,9 @@ func (e *PauseError) Error() string {
 	return fmt.Sprintf("Microsoft Graph requested a pause; resume after %s", e.Until.Local().Format(time.RFC3339))
 }
 func (e *PauseError) RetryTime() time.Time { return e.Until }
+
+// A full response to a range request must never be appended to retained chunks.
+type RangeUnsupportedError struct{}
+
+func (*RangeUnsupportedError) Error() string         { return "source ignored the download range" }
+func (*RangeUnsupportedError) RestartDownload() bool { return true }

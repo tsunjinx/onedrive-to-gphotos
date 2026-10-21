@@ -197,54 +197,11 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 		return errors.New("file exceeds cache capacity; create a new plan with a larger --cache-gib")
 	}
 	if item.State == "discovered" || item.State == "downloading" {
-		current, err := e.Source.Stat(ctx, item.Path)
-		if err != nil {
-			return err
-		}
-		if !sameVersion(current, item.Source) {
-			return errors.New("source file changed since planning; create a fresh plan for changed content")
-		}
-		// A partial encrypted download is restarted; no global progress is reset.
-		if err := os.Remove(cachePath); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		item.State = "downloading"
-		if err := save(); err != nil {
-			return err
-		}
-		free, err := staging.Free(e.Directory)
-		if err != nil {
-			return errors.New("cannot check available cache disk space")
-		}
-		if free < uint64(staging.Required(item.Source.Size)+(128<<20)) {
-			return errors.New("insufficient free disk space for this file and journal reserve")
-		}
-		writer, err := staging.Create(cachePath, stageKey, item.Source.Size)
-		if err != nil {
-			return err
-		}
-		err = e.Source.Read(ctx, item.Path, 0, writer)
-		if err != nil {
-			writer.Abort()
-			return err
-		}
-		hash, err := writer.Finish()
-		if err != nil {
-			return err
-		}
-		current, err = e.Source.Stat(ctx, item.Path)
-		if err != nil {
-			return err
-		}
-		if !sameVersion(current, item.Source) {
-			return errors.New("source changed during download; encrypted staging is not trusted")
-		}
-		item.Hash = hash
-		item.State = "staged"
-		if err := save(); err != nil {
+		if err := e.download(ctx, meta, id, item, cachePath, stageKey); err != nil {
 			return err
 		}
 	}
+
 	var reader *staging.Reader
 	if item.State != "uploaded" && !(item.State == "creating" && !e.Reconcile) {
 		var err error

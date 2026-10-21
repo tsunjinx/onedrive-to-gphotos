@@ -419,6 +419,9 @@ func (c Client) Read(ctx context.Context, name string, offset int64, out io.Writ
 	defer content.Body.Close()
 	if offset > 0 {
 		expected := "bytes " + strconv.FormatInt(offset, 10) + "-"
+		if content.StatusCode == 200 {
+			return &RangeUnsupportedError{}
+		}
 		if content.StatusCode != 206 || !strings.HasPrefix(content.Header.Get("Content-Range"), expected) {
 			return errors.New("source did not honor the download offset")
 		}
