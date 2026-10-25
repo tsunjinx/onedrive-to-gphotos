@@ -44,6 +44,24 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
+	cacheSet := false
+	resizeFlagError := false
+	flags.Visit(func(f *flag.Flag) {
+		if f.Name == "cache-gib" {
+			cacheSet = true
+		}
+		if command == "resize-cache" && f.Name != "job" && f.Name != "cache-gib" {
+			resizeFlagError = true
+		}
+	})
+	if command == "resize-cache" && (!cacheSet || resizeFlagError) {
+		fmt.Fprintln(errOut, "Usage: od2gp resize-cache --job JOB_ID --cache-gib N (increase only)")
+		return 2
+	}
+	if cacheSet && command != "plan" && command != "resize-cache" {
+		fmt.Fprintln(errOut, "Use resize-cache --job JOB_ID --cache-gib N to change a saved staging limit.")
+		return 2
+	}
 	if len(excludedFolders) > 0 && command != "plan" {
 		fmt.Fprintln(errOut, "--exclude-folder is supported only by new plans; Continue preserves the saved filter")
 		return 2
@@ -115,7 +133,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 		fmt.Fprintln(errOut, "Provide --job JOB_ID from the plan output.")
 		return 2
 	}
-	if command == "plan" && (*cacheGiB < 1 || *cacheGiB > 1024) {
+	if (command == "plan" || command == "resize-cache") && (*cacheGiB < 1 || *cacheGiB > 1024) {
 		fmt.Fprintln(errOut, "--cache-gib must be between 1 and 1024")
 		return 2
 	}
@@ -242,6 +260,18 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 		jobReady = true
 		backend = migrationBackend(meta)
 		excludePolicy = meta.ExcludePersonalVault || *excludeVault
+	}
+	if command == "resize-cache" {
+		if meta.ID != *jobID {
+			return fail(errors.New("saved job identity mismatch"))
+		}
+		engine := migration.Engine{Store: store}
+		if err := engine.IncreaseCache(&meta, *cacheGiB<<30); err != nil {
+			return fail(err)
+		}
+		fmt.Fprintf(out, "Saved staging limit: %.1f GiB. Job ID, scope and completion history are preserved.\n", float64(meta.CacheBytes)/(1<<30))
+		fmt.Fprintln(out, "This is a ceiling; available disk space is checked during transfer. No uploads were started.")
+		return 0
 	}
 	if command == "status" || command == "report" {
 		if command == "report" {
@@ -422,7 +452,7 @@ func migrationSummary(store *journal.Store, meta migration.Meta, out io.Writer) 
 	}
 	fmt.Fprintln(out, "Uploads use Google original quality and count toward storage. Available destination capacity has not been checked.")
 	if largest > meta.CacheBytes {
-		fmt.Fprintln(out, "Cache capacity is too small for the largest file; increase --cache-gib in a new plan.")
+		fmt.Fprintln(out, "Cache capacity is too small for the largest file; use resize-cache on this saved job.")
 	}
 	if !meta.RetryAt.IsZero() && time.Now().Before(meta.RetryAt) {
 		fmt.Fprintf(out, "Provider pause until: %s\n", meta.RetryAt.Local().Format(time.RFC3339))

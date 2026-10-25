@@ -90,7 +90,7 @@ A job's folder is fixed. Continue it with its original job ID. Separate plans do
 
 Check the Google account's **remaining free storage**, rather than just its subscription allowance. The reported 5 TB allowance is not a measurement of free capacity. Compare available space with the preview's eligible bytes; leave room for other account use. The CLI does not query account-wide free storage.
 
-The default staging cap is 30 GiB. All workers share that cap, so 700 GB of free local disk is not needed. Each file must fit its cap plus encryption overhead, and disk must have a further 128 MiB journal reserve. For the bulk run, having at least 30 GiB free is a practical starting point; keep space for other applications too. Preview prints the largest eligible staged file and warns if its cap is too small. The cap is fixed when planning; change it in a new plan before uploading, rather than passing a different cap to resume.
+The default staging cap is 30 GiB. All workers share that cap, so 700 GB of free local disk is not needed. Each file must fit its cap plus encryption overhead, and disk must have a further 128 MiB journal reserve. For the bulk run, having at least 30 GiB free is a practical starting point; keep space for other applications too. Preview prints the largest eligible staged file and warns if its cap is too small. To increase the cap without losing history, stop the running transfer, choose menu 3 → c → the saved job, and enter the new GiB limit. The resize operation starts no uploads. Decreasing a saved cap is not supported.
 
 Keep the computer powered, awake and online, and keep the Terminal/PowerShell session open during a run. The CLI does not prevent sleep or start itself after reboot.
 
@@ -150,7 +150,7 @@ bash scripts/od2gp.sh status
 bash scripts/od2gp.sh resume --job JOB_ID --wait --retries 5
 ```
 
-`status` lists saved IDs if you forgot one. Resume preserves committed progress, skips completed items, restarts the interrupted download if needed, and queries the server offset for an active upload. It may need to re-upload an unfinished file after a finalized/expired upload session. The computer must be restarted and the command run manually after shutdown.
+`status` lists saved IDs if you forgot one. Resume preserves committed progress, skips completed items, authenticates retained download chunks and resumes their verified offset where supported, and queries the server offset for an active upload. It may need to re-upload an unfinished file after a finalized/expired upload session. The computer must be restarted and the command run manually after shutdown.
 
 Keep the journal, credential-store keys and original Google client JSON. Default persistent app directories are `~/Library/Application Support/od2gp/` on macOS and `%APPDATA%\od2gp\` on Windows; each job is under `jobs/JOB_ID/`. Keys stay in the OS credential store, so copying only that directory to another machine does not migrate a job. If you use `OD2GP_CONFIG_DIR`, keep the same override for subsequent commands. Do not remove job data or keys while it is unfinished.
 
@@ -271,6 +271,17 @@ bash scripts/od2gp.sh plan --source / --exclude-personal-vault \
 
 ## Microsoft Graph temporary failures
 
-Read-only Graph GETs automatically retry HTTP 429/502/503/504 up to three times, respecting `Retry-After` or using exponential delay with jitter. This source retry limit is separate from the menu's Google retry count. Access-denied and expired-sign-in errors stop immediately. A wait exceeding 15 minutes stops with a resume deadline. Active job scans/transfers preserve that deadline when retries are exhausted or a retry wait is cancelled; Continue observes the saved pause. Standalone source scans have no job checkpoint.
+Read-only Graph GETs automatically retry HTTP 429/502/503/504 up to three times, respecting `Retry-After` or using exponential delay with jitter. This metadata-request retry limit is separate from the menu retry count, which also controls temporary download interruptions. Access-denied and expired-sign-in errors stop immediately. A wait exceeding 15 minutes stops with a resume deadline. Active job scans/transfers preserve that deadline when retries are exhausted or a retry wait is cancelled; Continue observes the saved pause. Standalone source scans have no job checkpoint.
 
-Interrupted response bodies and partial file downloads fail safely instead of appending a replay to staging. Continue recovers from the last durable file checkpoint. Source-network errors without a retryable HTTP response still stop for manual continuation. This release does not claim complete automatic retry of every source failure.
+Graph connection errors receive bounded retries. Interrupted download streams retry using authenticated retained staging chunks; staging-write failures stop immediately. Active job workers share a durable provider pause. Healthy downloads have no total-duration deadline; network inactivity times out after two minutes.
+
+
+## Increase staging space for the same job
+
+Stop any active transfer with Ctrl+C. Open menu **3) Continue → c) Increase staging space → select job**, enter a larger limit (up to 1024 GiB), then choose Continue again to transfer. Job identity, account bindings, source filters and completed media records remain unchanged. The cap is a ceiling, not a disk allocation: actual free space is checked during transfer.
+
+```bash
+bash scripts/od2gp.sh resize-cache --job JOB_ID --cache-gib 60
+```
+
+Source resume verifies each complete encrypted 4 MiB chunk and rebuilds the whole-file hash. Only a torn trailing record is discarded. Corrupt authenticated chunks stop recovery. Source versions are checked before and after downloading. If Graph returns a full response instead of the requested Range, only that unfinished file restarts from zero. These checks support process restart but do not replace the outstanding real power-loss trial.

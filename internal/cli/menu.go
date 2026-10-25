@@ -132,6 +132,10 @@ func (a *menuApp) run() int {
 		case "3", "4":
 			job, ok := a.chooseJob(jobs, choice == "3")
 			if ok {
+				if choice == "3" && job.ResizeCache {
+					a.resizeCache(job)
+					break
+				}
 				command := "status"
 				args := []string{command, "--job", job.ID}
 				if choice == "3" {
@@ -302,11 +306,19 @@ func (a *menuApp) chooseJob(jobs []menuJob, unfinishedOnly bool) (menuJob, bool)
 		fmt.Fprintln(a.out, a.t("No matching saved jobs. Choose Plan a new migration to begin."))
 		return menuJob{}, false
 	}
+	if unfinishedOnly {
+		fmt.Fprintln(a.out, a.t("c) Increase staging space for a saved job (no uploads)"))
+	}
 	fmt.Fprintln(a.out, a.t("0) Back"))
 	for {
 		answer, err := a.ask("Choose a job", "1")
 		if err != nil || answer == "0" {
 			return menuJob{}, false
+		}
+		if unfinishedOnly && strings.EqualFold(answer, "c") {
+			job, ok := a.chooseJob(choices, false)
+			job.ResizeCache = true
+			return job, ok
 		}
 		number, err := strconv.Atoi(answer)
 		if err == nil && number >= 1 && number <= len(choices) {

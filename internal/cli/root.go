@@ -30,6 +30,7 @@ Usage:
   od2gp plan --source / --exclude-personal-vault --exclude-folder /Documents/Projects
   od2gp run --job JOB_ID [--wait] [--retries N] [--workers 1-8] [--batch-size 1-50]
   od2gp resume --job JOB_ID [--wait] [--retries N] [--workers 1-8] [--batch-size 1-50]
+  od2gp resize-cache --job JOB_ID --cache-gib 60
   od2gp status --job JOB_ID
   od2gp report --job JOB_ID --format csv
   od2gp source check
@@ -100,7 +101,7 @@ func RunContext(ctx context.Context, args []string, input io.Reader, stdout, std
 	}
 	if len(args) > 0 {
 		switch args[0] {
-		case "plan", "run", "resume", "status", "report":
+		case "plan", "run", "resume", "status", "report", "resize-cache":
 			return migrationCommand(ctx, args[0], args[1:], input, stdout, stderr, configEnv, root)
 		}
 	}

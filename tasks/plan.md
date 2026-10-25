@@ -274,3 +274,8 @@ Add option 9 for English / Tiếng Việt, saving `en` or `vi` in the existing n
 - Local reopen tests cover partial batch successes plus unknown outcomes, explicit reconciliation of only uncertain items, pending-video polling by stored ID, and durable Graph pause recovery. They do not substitute for abrupt-kill, live provider or hardware power-off acceptance.
 
 Next gates: owner validates a small non-overlapping filtered plan and continued existing-job throughput; verify representative video READY/playback/audio, then native Windows and disposable-VM power-loss recovery before the 700 GB run. Existing jobs retain their current source scope and staging cap.
+
+
+## Large-download and saved-cap increment — 2026-10-26
+
+Implemented idle-based downloads, authenticated source-range resume, bounded source retries coordinated through the job's provider pause, and increase-only saved-job staging resize. These supersede the earlier full-download restart and immutable-cap limitations. Continue → c performs a local locked metadata update with no uploads; subsequent Continue uses the same history. Remaining gates are live throughput, representative video READY/playback/audio, native Windows credentials, abrupt-kill and disposable-VM power-loss acceptance.

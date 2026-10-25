@@ -107,7 +107,7 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		}
 		required = max(required, allocated[id])
 		if required > meta.CacheBytes {
-			return errors.New("file exceeds cache capacity; create a new plan with a larger --cache-gib")
+			return errors.New("file exceeds cache capacity; increase staging space for this saved job through Continue or resize-cache")
 		}
 		pending = append(pending, transferTask{id: id, item: item, reserved: required})
 	}

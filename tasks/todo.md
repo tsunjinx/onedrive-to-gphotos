@@ -1,6 +1,6 @@
 # Current work and acceptance checklist
 
-Updated 2026-10-19. See [the current plan](plan.md), [operating instructions](../docs/runbook.md) and [validation evidence](review.md). The checklist below separates implementation from live acceptance.
+Updated 2026-10-26. See [the current plan](plan.md), [operating instructions](../docs/runbook.md) and [validation evidence](review.md). The checklist below separates implementation from live acceptance.
 
 - [x] Source launchers, rclone setup and Google authentication implemented; owner reports both account checks working.
 - [x] Metadata inventory, encrypted SQLite/staging, plan/run/resume/status/report implemented.
@@ -26,6 +26,10 @@ Updated 2026-10-19. See [the current plan](plan.md), [operating instructions](..
 - [x] Bounded read-only Graph HTTP retries with Retry-After, cancellation and saved-job pause deadlines on stop; permission/authentication failures remain immediate.
 - [x] Menu option 10 and repeatable plan --exclude-folder; immutable per-job policy, explicit skipped records and report/preview disclosure; full scan retained.
 - [x] Local reopened-journal checks for mixed batch outcomes, uncertain-only recovery, video polling without re-upload and source pause persistence. Live and abrupt-power-off gates remain unchecked.
+- [x] Replace fixed download duration with a two-minute network idle timeout; healthy large-video downloads keep running.
+- [x] Authenticate and resume retained encrypted source chunks; explicit ignored-Range fallback and source-version checks.
+- [x] Bounded source connection/download retries, shared durable provider pause, and immediate stop on staging-write errors.
+- [x] Increase staging cap on an existing locked job through Continue → c or resize-cache, preserving completion records and source/account bindings.
 - [ ] Benchmark native parallel-plus-batch throughput and remaining per-stage latency; verify actual multi-item recovery.
 - [ ] Determine whether Personal Vault contains media needing separate migration; its inaccessible contents have unknown count/size and are outside this job.
 - [ ] Check current free destination/local storage, review the completed preview and conduct a short controlled trial within that same root job.

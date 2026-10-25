@@ -12,6 +12,8 @@ import (
 )
 
 type menuJob struct {
+	CacheBytes                              int64
+	ResizeCache                             bool
 	ID, Folder, Problem                     string
 	Created                                 time.Time
 	Total, Completed, Processing, Skipped   int
@@ -78,6 +80,7 @@ func loadMenuJob(file, id string) (menuJob, error) {
 	if meta.ID != id {
 		return job, errors.New("saved job identity mismatch")
 	}
+	job.CacheBytes = meta.CacheBytes
 	job.Folder, job.Created, job.Incomplete = meta.Folder, meta.Created, !meta.InventoryComplete
 	job.InventoryComplete, job.ExcludePersonalVault = meta.InventoryComplete, meta.ExcludePersonalVault
 	job.DriveID, job.GoogleSubject = meta.DriveID, meta.GoogleSubject

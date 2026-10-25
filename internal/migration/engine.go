@@ -196,7 +196,7 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 		return e.created(ctx, id, item, cachePath)
 	}
 	if staging.Required(item.Source.Size) > meta.CacheBytes {
-		return errors.New("file exceeds cache capacity; create a new plan with a larger --cache-gib")
+		return errors.New("file exceeds cache capacity; increase staging space for this saved job through Continue or resize-cache")
 	}
 	if item.State == "discovered" || item.State == "downloading" {
 		if err := e.download(ctx, meta, id, item, cachePath, stageKey); err != nil {
