@@ -47,11 +47,17 @@ jobs:
       - name: Install and reuse Go with no Go on PATH
         if: matrix.shell == 'powershell'
         shell: powershell
-        run: ./tests/windows-bootstrap.ps1
+        run: |
+          ./tests/windows-bootstrap-faults.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tests/windows-bootstrap.ps1
       - name: PowerShell 7 verification
         if: matrix.shell == 'pwsh'
         shell: pwsh
-        run: ./tests/windows-bootstrap.ps1
+        run: |
+          ./tests/windows-bootstrap-faults.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./tests/windows-bootstrap.ps1
   windows-menu:
     runs-on: windows-latest
     timeout-minutes: 20
