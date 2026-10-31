@@ -25,15 +25,6 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/od2gp.ps1 version
-      - name: Windows first-run install smoke test
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $goDirectory = Split-Path (Get-Command go).Source
-          $env:PATH = (($env:PATH -split ';') | Where-Object { $_.TrimEnd('\') -ne $goDirectory.TrimEnd('\') }) -join ';'
-          if (Get-Command go -ErrorAction SilentlyContinue) { throw 'Go is still on PATH; first-run test would not exercise installation.' }
-          $env:OD2GP_TOOL_DIR = Join-Path $env:RUNNER_TEMP 'od2gp first-run tools'
-          ./scripts/od2gp.ps1 version
       - run: go test ./...
       - run: go vet ./...
       - name: Race tests
@@ -44,6 +35,32 @@ jobs:
         if: runner.os == 'macOS'
       - run: ./od2gp.exe version
         if: runner.os == 'Windows'
+  windows-bootstrap:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install and reuse Go with no Go on PATH
+        shell: ${{ matrix.shell }}
+        run: ./tests/windows-bootstrap.ps1
+  windows-menu:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [powershell, pwsh]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.2'
+          cache: false
+      - name: Native shell and desktop entry menu
+        shell: ${{ matrix.shell }}
+        run: ./tests/windows-menu.ps1
   cross-build:
     runs-on: ubuntu-latest
     strategy:
