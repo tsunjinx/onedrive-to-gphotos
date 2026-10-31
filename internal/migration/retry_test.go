@@ -109,12 +109,18 @@ func TestRetryBudgetAndBackoffAreBounded(t *testing.T) {
 	flaky := &flakyPhotos{photosFake: photos, startFailures: 100, startError: &googlephotos.APIError{Code: 429}}
 	e.Photos, e.MaxRetries = flaky, 2
 	waits := 0
+	attemptStart := time.Now()
 	e.retryWait = func(_ context.Context, delay time.Duration) error {
 		minimum := 30 * time.Second * time.Duration(1<<waits)
-		if delay < minimum || delay > minimum+2*time.Second {
+		// Persistence and logging consume time before awaitRetry calls the hook.
+		// Bound the scheduled deadline, not the remaining sleep against the
+		// original interval (which flakes with small jitter on Windows).
+		now := time.Now()
+		if meta.RetryAt.Before(attemptStart.Add(minimum)) || meta.RetryAt.After(now.Add(minimum+time.Second)) || delay <= 0 || delay > minimum+time.Second {
 			t.Fatalf("wrong backoff: %s", delay)
 		}
 		waits++
+		attemptStart = time.Now()
 		return nil
 	}
 	if err := e.Run(context.Background(), meta); err == nil || waits != 2 || flaky.startCalls != 3 {
