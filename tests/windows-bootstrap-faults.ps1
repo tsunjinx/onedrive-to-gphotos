@@ -24,7 +24,8 @@ function Invoke-WebRequest {
     } else { throw 'offline fixture download refused' }
 }
 function Expand-Archive { throw 'FAULT: extraction must never run' }
-. (Join-Path $PSScriptRoot 'scripts\od2gp.ps1') version
+& (Join-Path $PSScriptRoot 'scripts\od2gp.ps1') version
+exit $LASTEXITCODE
 '@ | Set-Content -LiteralPath $wrapper -Encoding UTF8
 $version = ((Get-Content (Join-Path $scripts.FullName 'toolchain.tsv') | Where-Object { $_ -match ' windows amd64 ' }) -split ' ')[0]
 try {
@@ -57,7 +58,7 @@ try {
                 $out = $child.StandardOutput.ReadToEndAsync()
                 $err = $child.StandardError.ReadToEndAsync()
                 if (-not $child.WaitForExit(30000)) { $child.Kill(); throw "$case timed out" }
-                if ($child.ExitCode -ne 1) { throw "$case did not fail closed" }
+                if ($child.ExitCode -ne 1) { throw "$case exit $($child.ExitCode): $($out.Result) $($err.Result)" }
                 $output = $out.Result + $err.Result
             } finally { $child.Dispose() }
             $expected = switch ($case) {
