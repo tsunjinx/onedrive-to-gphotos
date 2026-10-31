@@ -37,6 +37,7 @@ jobs:
         if: runner.os == 'Windows'
   windows-bootstrap:
     runs-on: windows-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -44,10 +45,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install and reuse Go with no Go on PATH
-        shell: ${{ matrix.shell }}
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./tests/windows-bootstrap.ps1
+      - name: PowerShell 7 verification
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
         run: ./tests/windows-bootstrap.ps1
   windows-menu:
     runs-on: windows-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -59,7 +66,12 @@ jobs:
           go-version: '1.27.2'
           cache: false
       - name: Native shell and desktop entry menu
-        shell: ${{ matrix.shell }}
+        if: matrix.shell == 'powershell'
+        shell: powershell
+        run: ./tests/windows-menu.ps1
+      - name: PowerShell 7 verification
+        if: matrix.shell == 'pwsh'
+        shell: pwsh
         run: ./tests/windows-menu.ps1
   cross-build:
     runs-on: ubuntu-latest
