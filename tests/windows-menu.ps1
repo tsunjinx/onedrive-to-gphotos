@@ -28,7 +28,11 @@ function Invoke-MenuProcess($Executable, $Arguments, $InputLines, $ExpectedExit 
                 if ($read.Result -eq 0) { throw ('Menu ended before prompt: ' + $errors.Result) }
                 $seen += [string]::new($buffer, 0, $read.Result)
             }
-            foreach ($line in $InputLines) { $process.StandardInput.WriteLine($line) }
+            # Write raw ASCII choices: .NET Framework's default StreamWriter can
+            # prefix UTF-8 BOM, turning the first choice into an invalid command.
+            $bytes = [Text.Encoding]::ASCII.GetBytes(($InputLines -join "`n") + "`n")
+            $process.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+            $process.StandardInput.BaseStream.Flush()
         }
         $process.StandardInput.Close()
         $output = $process.StandardOutput.ReadToEndAsync()
