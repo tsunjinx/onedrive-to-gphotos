@@ -61,7 +61,8 @@ func readSetupLine(reader *bufio.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(line), nil
+	// Windows PowerShell can prefix redirected native input with a UTF-8 BOM.
+	return strings.TrimSpace(strings.TrimPrefix(line, "\ufeff")), nil
 }
 
 // RunMicrosoftSetup changes only public app settings, never tokens or jobs.

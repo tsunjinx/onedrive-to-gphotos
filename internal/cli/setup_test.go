@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"od2gp/internal/settings"
@@ -104,5 +105,15 @@ func TestMicrosoftSetupPreservesGoogleAndLeavesJobsUntouched(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "od2gp", "jobs")); !os.IsNotExist(err) {
 		t.Fatal("setup touched migration jobs")
+	}
+}
+
+func TestPromptAcceptsWindowsUTF8BOM(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader("\ufeff9\r\n2\r\n"))
+	for _, want := range []string{"9", "2"} {
+		got, err := readSetupLine(reader)
+		if err != nil || got != want {
+			t.Fatalf("got %q, %v; want %q", got, err, want)
+		}
 	}
 }
