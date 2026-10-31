@@ -37,6 +37,7 @@ function Invoke-MenuProcess($Executable, $Arguments, $InputLines, $ExpectedExit 
         $process.StandardInput.Close()
         $output = $process.StandardOutput.ReadToEndAsync()
         if (-not $process.WaitForExit(120000)) { throw 'Menu exit timed out' }
+        Write-Output ($seen + $output.Result + $errors.Result)
         if ($process.ExitCode -ne $ExpectedExit) { throw "Unexpected exit $($process.ExitCode): $($errors.Result) $($output.Result)" }
     } finally {
         if (-not $process.HasExited) { $process.Kill(); $process.WaitForExit() }
