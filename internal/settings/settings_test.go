@@ -3,6 +3,7 @@ package settings
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -21,7 +22,8 @@ func TestEnvOverridesSavedConfigAndSaveIsPrivate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0077 != 0 {
+	// Windows privacy is checked against its DACL in settings/permissions_windows_test.go.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		t.Fatalf("file mode too broad: %o", info.Mode().Perm())
 	}
 	env, err := Env(root, func(k string) string {

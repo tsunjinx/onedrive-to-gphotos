@@ -6,6 +6,7 @@ import (
 	"od2gp/internal/settings"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -49,7 +50,8 @@ func TestSetupGuidesValidatesAndSavesReusableSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm()&0077 != 0 {
+	// Windows privacy is checked against its DACL in settings/permissions_windows_test.go.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0077 != 0 {
 		t.Fatalf("config directory permissions are too broad: %o", info.Mode().Perm())
 	}
 }

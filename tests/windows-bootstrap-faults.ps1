@@ -44,11 +44,22 @@ try {
         $held = $null
         try {
             if ($case -eq 'locked') { $held = [IO.File]::Open((Join-Path $env:OD2GP_TOOL_DIR '.install-lock'), 'OpenOrCreate', 'ReadWrite', 'None') }
-            # cmd redirects stderr so Windows PowerShell does not turn expected native errors into exceptions.
-            $log = Join-Path $fixture ($case + '.log')
-            & $env:ComSpec /d /c "`"`"$hostExe`" -NoProfile -File `"$wrapper`" > `"$log`" 2>&1`""
-            if ($LASTEXITCODE -ne 1) { throw "$case did not fail closed" }
-            $output = Get-Content -LiteralPath $log -Raw
+            $info = New-Object Diagnostics.ProcessStartInfo
+            $info.FileName = $hostExe
+            $info.Arguments = "-NoProfile -File `"$wrapper`""
+            $info.UseShellExecute = $false
+            $info.RedirectStandardOutput = $true
+            $info.RedirectStandardError = $true
+            $child = New-Object Diagnostics.Process
+            $child.StartInfo = $info
+            try {
+                [void]$child.Start()
+                $out = $child.StandardOutput.ReadToEndAsync()
+                $err = $child.StandardError.ReadToEndAsync()
+                if (-not $child.WaitForExit(30000)) { $child.Kill(); throw "$case timed out" }
+                if ($child.ExitCode -ne 1) { throw "$case did not fail closed" }
+                $output = $out.Result + $err.Result
+            } finally { $child.Dispose() }
             $expected = switch ($case) {
                 'checksum' { 'checksum mismatch' }
                 'partial' { 'Managed installation is invalid' }
