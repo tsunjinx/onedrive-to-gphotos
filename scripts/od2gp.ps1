@@ -1,6 +1,9 @@
 # Source launcher for Windows. Invoked with: & .\scripts\od2gp.ps1 help
 # No parameter binding: forward every argument to the CLI unchanged.
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell's per-file/download progress rendering is very expensive
+# for a toolchain archive. Keep our explicit status/error messages instead.
+$ProgressPreference = 'SilentlyContinue'
 $cliArgs = $args
 $root = Split-Path $PSScriptRoot -Parent
 $stage = $null
