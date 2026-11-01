@@ -28,3 +28,7 @@ Only use a disposable VM and copies of test media. Force VM power-off separately
 Measure 1, 3 and 6 workers on disjoint representative folders to avoid separate-job duplicates. Record commit, Windows version, total bytes, elapsed time, effective MB/s, retries/429 responses and peak staging usage. Keep identical batching settings and account/network conditions. Do not infer 700 GB performance from small image counts alone. Approve the large migration only after the report and media checks pass.
 
 Record date, commit, OS/shell version, report totals and pass/fail for each step. Keep account identifiers and file names private when sharing evidence.
+
+## Console selection pause
+
+If transfer output stops after clicking/selecting text in classic PowerShell and resumes immediately after Enter/Esc, exit selection mode with Esc. For an older running version, open the console title-bar Properties → Options and uncheck QuickEdit Mode. The current CLI disables QuickEdit on interactive Windows stdin while it runs and restores the original input mode on normal return, including Ctrl+C handled by the app. Redirected input is unaffected. This does not prevent explicit Mark mode or all selection behavior in other terminal hosts. Verify switching windows without selecting text during the desktop trial; CI mode tests do not prove the user's exact pause is resolved.

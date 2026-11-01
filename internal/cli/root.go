@@ -52,6 +52,8 @@ func Run(args []string, stdout, stderr io.Writer, getenv func(string) string) in
 }
 
 func RunContext(ctx context.Context, args []string, input io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
+	restoreConsole := prepareTransferConsole(input)
+	defer restoreConsole()
 	if len(args) == 1 && args[0] == "internal-rclone-password" {
 		secret, err := onedrive.Password()
 		if err != nil {
