@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -117,6 +118,23 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		}
 		pending = append(pending, transferTask{id: id, item: item, reserved: required})
 	}
+	sort.SliceStable(pending, func(i, j int) bool {
+		pI := 1
+		if pending[i].item.State == "created" || pending[i].item.State == "uploaded" {
+			pI = 0
+		}
+		pJ := 1
+		if pending[j].item.State == "created" || pending[j].item.State == "uploaded" {
+			pJ = 0
+		}
+		if pI != pJ {
+			return pI < pJ
+		}
+		if pending[i].item.Source.Size != pending[j].item.Source.Size {
+			return pending[i].item.Source.Size < pending[j].item.Source.Size
+		}
+		return pending[i].id < pending[j].id
+	})
 	tasks := make(chan transferTask)
 	results := make(chan transferResult, e.Workers)
 	var workers sync.WaitGroup

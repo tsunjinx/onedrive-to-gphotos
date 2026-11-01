@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -218,6 +219,11 @@ func (e *Engine) Run(ctx context.Context, meta *Meta) error {
 		}
 		return nil
 	}
+	type serialTask struct {
+		id   int64
+		item Item
+	}
+	var pending []serialTask
 	for _, id := range ids {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -229,8 +235,31 @@ func (e *Engine) Run(ctx context.Context, meta *Meta) error {
 		if item.State == "completed" || item.State == "skipped" || item.State == "processing_failed" || item.State == "needs_review" {
 			continue
 		}
-		fmt.Fprintf(e.Progress, "[%d/%d] %q: %s\n", id, len(ids), item.Path, item.State)
-		if err := e.transferWithRetries(ctx, meta, id, &item); err != nil {
+		pending = append(pending, serialTask{id: id, item: item})
+	}
+	sort.SliceStable(pending, func(i, j int) bool {
+		pI := 1
+		if pending[i].item.State == "created" || pending[i].item.State == "uploaded" {
+			pI = 0
+		}
+		pJ := 1
+		if pending[j].item.State == "created" || pending[j].item.State == "uploaded" {
+			pJ = 0
+		}
+		if pI != pJ {
+			return pI < pJ
+		}
+		if pending[i].item.Source.Size != pending[j].item.Source.Size {
+			return pending[i].item.Source.Size < pending[j].item.Source.Size
+		}
+		return pending[i].id < pending[j].id
+	})
+	for _, task := range pending {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		fmt.Fprintf(e.Progress, "[%d/%d] %q: %s\n", task.id, len(ids), task.item.Path, task.item.State)
+		if err := e.transferWithRetries(ctx, meta, task.id, &task.item); err != nil {
 			return err
 		}
 	}

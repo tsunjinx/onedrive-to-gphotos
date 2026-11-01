@@ -1,6 +1,7 @@
 package migration
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -281,4 +282,114 @@ func TestParallelTransientFailureRetainsSharedRetryCheckpoint(t *testing.T) {
 	if p.created != 6 || !meta.RetryAt.IsZero() {
 		t.Fatalf("retry did not finish: created=%d pause=%v", p.created, meta.RetryAt)
 	}
+}
+
+type orderSource struct {
+	items map[string]onedrive.Item
+	data  map[string][]byte
+	mu    sync.Mutex
+	reads []string
+}
+
+func (s *orderSource) DriveID(context.Context) (string, error)                       { return "drive", nil }
+func (s *orderSource) Walk(context.Context, string, func(onedrive.Item) error) error { return nil }
+func (s *orderSource) Stat(ctx context.Context, p string) (onedrive.Item, error) {
+	if item, ok := s.items[p]; ok {
+		return item, nil
+	}
+	return onedrive.Item{}, errors.New("not found")
+}
+func (s *orderSource) Read(ctx context.Context, p string, offset int64, w io.Writer) error {
+	s.mu.Lock()
+	s.reads = append(s.reads, p)
+	data := s.data[p]
+	s.mu.Unlock()
+	_, err := w.Write(data[offset:])
+	return err
+}
+
+func TestUploadFlowOrdersLightestFilesFirst(t *testing.T) {
+	runTest := func(t *testing.T, workers int) {
+		e, meta, _, _, closeStore := fixture(t)
+		defer closeStore()
+
+		files := []struct {
+			id   int64
+			path string
+			size int64
+		}{
+			{1, "large-video.mp4", 5000},
+			{2, "tiny-photo.jpg", 100},
+			{3, "medium-photo.jpg", 1000},
+			{4, "small-photo.jpg", 300},
+		}
+
+		src := &orderSource{
+			items: make(map[string]onedrive.Item),
+			data:  make(map[string][]byte),
+		}
+
+		for _, f := range files {
+			data := bytes.Repeat([]byte{byte(f.id)}, int(f.size))
+			item := onedrive.Item{
+				ID:      fmt.Sprintf("src-%d", f.id),
+				Path:    f.path,
+				Name:    f.path,
+				Size:    f.size,
+				ModTime: "version",
+				Hashes:  map[string]string{"hash": fmt.Sprint(f.id)},
+			}
+			src.items[f.path] = item
+			src.data[f.path] = data
+
+			rec := Item{
+				Source: item,
+				Path:   f.path,
+				MIME:   "image/jpeg",
+				State:  "discovered",
+			}
+			if strings.HasSuffix(f.path, ".mp4") {
+				rec.MIME = "video/mp4"
+				rec.Video = true
+			}
+			if err := e.Store.Save(f.id, rec.State, rec); err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		e.Source = src
+		e.Workers = workers
+		meta.CacheBytes = 1 << 30
+
+		if err := e.Run(context.Background(), meta); err != nil {
+			t.Fatal(err)
+		}
+
+		expected := []string{
+			"tiny-photo.jpg",   // 100 bytes
+			"small-photo.jpg",  // 300 bytes
+			"medium-photo.jpg", // 1000 bytes
+			"large-video.mp4",  // 5000 bytes
+		}
+
+		src.mu.Lock()
+		reads := append([]string(nil), src.reads...)
+		src.mu.Unlock()
+
+		if len(reads) != len(expected) {
+			t.Fatalf("expected %d reads, got %d: %v", len(expected), len(reads), reads)
+		}
+		for i, p := range expected {
+			if reads[i] != p {
+				t.Fatalf("step %d: expected %s, got %s (full reads: %v)", i, p, reads[i], reads)
+			}
+		}
+	}
+
+	t.Run("serial", func(t *testing.T) {
+		runTest(t, 0)
+	})
+	t.Run("parallel-single-worker", func(t *testing.T) {
+		runTest(t, 1)
+	})
 }
