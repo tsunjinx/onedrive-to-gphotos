@@ -393,3 +393,115 @@ func TestUploadFlowOrdersLightestFilesFirst(t *testing.T) {
 		runTest(t, 1)
 	})
 }
+
+type autoWorkersPhotos struct {
+	mu        sync.Mutex
+	active    int
+	maxActive int
+	created   int
+	fails     int
+}
+
+func (p *autoWorkersPhotos) Start(context.Context, string, int64) (googlephotos.Session, error) {
+	p.mu.Lock()
+	if p.fails > 0 {
+		p.fails--
+		p.mu.Unlock()
+		return googlephotos.Session{}, &googlephotos.ConnectionError{}
+	}
+	p.mu.Unlock()
+	return googlephotos.Session{URL: "session", Granularity: 1, Created: time.Now()}, nil
+}
+func (p *autoWorkersPhotos) Query(context.Context, googlephotos.Session) (int64, string, error) {
+	return 0, "active", nil
+}
+func (p *autoWorkersPhotos) Chunk(ctx context.Context, _ googlephotos.Session, _ int64, _ []byte, _ bool) (string, error) {
+	p.mu.Lock()
+	p.active++
+	p.maxActive = max(p.maxActive, p.active)
+	p.mu.Unlock()
+	time.Sleep(50 * time.Millisecond)
+	p.mu.Lock()
+	p.active--
+	p.mu.Unlock()
+	return "token", nil
+}
+func (p *autoWorkersPhotos) Create(context.Context, string, string) (googlephotos.Media, error) {
+	p.mu.Lock()
+	p.created++
+	id := p.created
+	p.mu.Unlock()
+	return googlephotos.Media{ID: fmt.Sprint(id)}, nil
+}
+func (p *autoWorkersPhotos) Get(context.Context, string) (googlephotos.Media, error) {
+	return googlephotos.Media{}, nil
+}
+
+func TestAutoWorkersScaleUpOnStableNetwork(t *testing.T) {
+	e, meta, source, _, closeStore := fixture(t)
+	defer closeStore()
+	e.Source = parallelSource{item: source.item, data: source.data}
+	e.AutoWorkers = true
+	e.Workers = 2
+	totalFiles := 15
+	for id := int64(2); id <= int64(totalFiles); id++ {
+		var item Item
+		if err := e.Store.Load(1, &item); err != nil {
+			t.Fatal(err)
+		}
+		item.Path = fmt.Sprintf("photo-%d.jpg", id)
+		if err := e.Store.Save(id, item.State, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	meta.CacheBytes = int64(totalFiles) * staging.Required(source.item.Size)
+	p := &autoWorkersPhotos{}
+	e.Photos = p
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := e.Run(ctx, meta); err != nil {
+		t.Fatal(err)
+	}
+
+	if p.created != totalFiles {
+		t.Fatalf("expected %d created, got %d", totalFiles, p.created)
+	}
+	if p.maxActive <= 2 {
+		t.Fatalf("expected auto-workers to scale up beyond starting limit 2, got maxActive=%d", p.maxActive)
+	}
+}
+
+func TestAutoWorkersThrottleDownOnFailure(t *testing.T) {
+	e, meta, source, _, closeStore := fixture(t)
+	defer closeStore()
+	e.Source = parallelSource{item: source.item, data: source.data}
+	e.AutoWorkers = true
+	e.Workers = 4
+	e.MaxRetries = 2
+	e.retryWait = func(ctx context.Context, delay time.Duration) error { return nil }
+
+	totalFiles := 6
+	for id := int64(2); id <= int64(totalFiles); id++ {
+		var item Item
+		if err := e.Store.Load(1, &item); err != nil {
+			t.Fatal(err)
+		}
+		item.Path = fmt.Sprintf("photo-%d.jpg", id)
+		if err := e.Store.Save(id, item.State, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	meta.CacheBytes = int64(totalFiles) * staging.Required(source.item.Size)
+	p := &autoWorkersPhotos{fails: 1}
+	e.Photos = p
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := e.Run(ctx, meta); err != nil {
+		t.Fatal(err)
+	}
+	if p.created != totalFiles {
+		t.Fatalf("expected all %d files created after recovery, got %d", totalFiles, p.created)
+	}
+}

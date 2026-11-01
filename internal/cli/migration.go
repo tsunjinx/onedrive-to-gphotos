@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,7 +42,8 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	batchSize := flags.Int("batch-size", 50, "maximum items per sequential Google creation batch (1-50)")
 	autoRetryCreation := flags.Bool("auto-retry-creation", true, "retry temporary creation errors with the original upload tokens")
 	verbose := flags.Bool("verbose", false, "show detailed transfer logs instead of the interactive progress bar")
-	workers := flags.Int("workers", 3, "parallel file transfers (1-8); library creation remains sequential")
+	workers := flags.String("workers", "3", "parallel file transfers (1-8 or 'auto'); library creation remains sequential")
+	autoWorkers := flags.Bool("auto-workers", false, "dynamically adjust workers (2-8) based on network performance and stability")
 	retries := flags.Int("retries", 5, "automatic retries per file for temporary upload/download failures (0-10)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
@@ -82,9 +84,18 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 		fmt.Fprintln(errOut, "--retries must be between 0 and 10")
 		return 2
 	}
-	if *workers < 1 || *workers > 8 {
-		fmt.Fprintln(errOut, "--workers must be between 1 and 8")
-		return 2
+	workerCount := 3
+	isAutoWorkers := *autoWorkers
+	if *workers == "auto" {
+		isAutoWorkers = true
+		workerCount = 3
+	} else {
+		n, err := strconv.Atoi(*workers)
+		if err != nil || n < 1 || n > 8 {
+			fmt.Fprintln(errOut, "--workers must be between 1 and 8")
+			return 2
+		}
+		workerCount = n
 	}
 	if *batchSize < 1 || *batchSize > 50 {
 		fmt.Fprintln(errOut, "--batch-size must be between 1 and 50")
@@ -101,12 +112,16 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 		return 2
 	}
 	workersSet := false
+	autoWorkersSet := false
 	flags.Visit(func(f *flag.Flag) {
 		if f.Name == "workers" {
 			workersSet = true
 		}
+		if f.Name == "auto-workers" {
+			autoWorkersSet = true
+		}
 	})
-	if workersSet && command != "run" && command != "resume" {
+	if (workersSet || autoWorkersSet) && command != "run" && command != "resume" {
 		fmt.Fprintln(errOut, "--workers is supported by run and resume")
 		return 2
 	}
@@ -296,7 +311,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 			return fail(err)
 		}
 	}
-	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, AutoRetryCreation: *autoRetryCreation, MaxRetries: *retries, Workers: *workers, BatchSize: *batchSize}
+	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, AutoRetryCreation: *autoRetryCreation, AutoWorkers: isAutoWorkers, MaxRetries: *retries, Workers: workerCount, BatchSize: *batchSize}
 	if command == "plan" {
 		meta = migration.Meta{SourceBackend: backend, SourceSubject: microsoftSession.Account.Subject, SourceClient: microsoftSession.ClientID, ID: *jobID, Folder: selected, DriveID: driveID, GoogleSubject: session.Account.Subject, GoogleClient: session.ClientID, CacheBytes: *cacheGiB << 30, ExcludedFolders: excludedFolders, ExcludePersonalVault: *excludeVault, Created: time.Now().UTC()}
 		if err := store.Save(0, "job", meta); err != nil {

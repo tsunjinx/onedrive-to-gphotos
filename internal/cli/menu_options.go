@@ -20,6 +20,7 @@ type transferOptions struct {
 	BatchSize       int    `json:"batch_size"`
 	Retries         int    `json:"retries"`
 	WaitVideos      bool   `json:"wait_videos"`
+	AutoWorkers     bool   `json:"auto_workers,omitempty"`
 }
 
 func defaultTransferOptions() transferOptions {
@@ -33,6 +34,9 @@ func (o transferOptions) localizedSummary(language string) string {
 	wait := "check videos once"
 	if o.WaitVideos {
 		wait = "wait for video processing"
+	}
+	if o.AutoWorkers {
+		return fmt.Sprintf(menuText(language, "auto-workers (2-8) | batch up to %d | %d retries | %s"), o.BatchSize, o.Retries, menuText(language, wait))
 	}
 	return fmt.Sprintf(menuText(language, "%d files at once | batch up to %d | %d retries | %s"), o.Workers, o.BatchSize, o.Retries, menuText(language, wait))
 }
@@ -107,6 +111,9 @@ func (a *menuApp) transferArgs(command, id string) []string {
 	if opts.WaitVideos {
 		args = append(args, "--wait")
 	}
+	if opts.AutoWorkers {
+		args = append(args, "--auto-workers")
+	}
 	return append(args, "--workers", strconv.Itoa(opts.Workers), "--batch-size", strconv.Itoa(opts.BatchSize), "--retries", strconv.Itoa(opts.Retries))
 }
 func (a *menuApp) startTransfer(args []string) {
@@ -132,7 +139,7 @@ func (a *menuApp) transferNumber(label string, value, minimum, maximum int) (int
 func (a *menuApp) configureTransfers() {
 	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, a.t("Transfer speed & options\nCurrent:"), a.optionsSummary())
-	fmt.Fprintln(a.out, a.t("1) Recommended: 3 files, batch 50, 5 retries, wait for videos\n2) Gentle: 1 file at once (try this if requests keep failing)\n3) Faster: 6 files at once\n4) Custom settings\n0) Back"))
+	fmt.Fprintln(a.out, a.t("1) Recommended: 3 files, batch 50, 5 retries, wait for videos\n2) Gentle: 1 file at once (try this if requests keep failing)\n3) Faster: 6 files at once\n4) Custom settings\n5) Auto-workers: dynamically scale 2-8 files based on network\n0) Back"))
 	fmt.Fprintln(a.out, a.t("Settings are remembered for New migration and Continue. Your saved folder and staging limit stay the same."))
 	for {
 		choice, err := a.ask("Choose a preset", "0")
@@ -149,12 +156,15 @@ func (a *menuApp) configureTransfers() {
 			opts.Language = language
 			opts.ExcludedFolders = filters
 		case "2":
+			opts.AutoWorkers = false
 			opts.Workers = 1
 		case "3":
+			opts.AutoWorkers = false
 			opts.Workers = 6
 		case "4":
 			fmt.Fprintln(a.out, a.t("Press Enter to keep a value, or type b to cancel without saving."))
 			opts = a.currentOptions()
+			opts.AutoWorkers = false
 			var ok bool
 			if opts.Workers, ok = a.transferNumber("Files to upload at once", opts.Workers, 1, 8); !ok {
 				return
@@ -187,8 +197,11 @@ func (a *menuApp) configureTransfers() {
 				}
 				break
 			}
+		case "5":
+			opts.AutoWorkers = true
+			opts.Workers = 3
 		default:
-			fmt.Fprintln(a.out, a.t("Choose a number from 0 to 4."))
+			fmt.Fprintln(a.out, a.t("Choose a number from 0 to 5."))
 			continue
 		}
 		if a.saveOptions != nil {

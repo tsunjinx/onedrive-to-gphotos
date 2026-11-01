@@ -191,3 +191,23 @@ func TestRealMenuReloadsSavedPresetOnNextLaunch(t *testing.T) {
 		t.Fatalf("next launch lost preset: %d %s %s", code, out.String(), errOut.String())
 	}
 }
+
+func TestMenuAutoWorkersPresetAndArgs(t *testing.T) {
+	var out bytes.Buffer
+	var saved transferOptions
+	app := menuApp{
+		ctx:         context.Background(),
+		input:       bufio.NewReader(strings.NewReader("5\n")),
+		out:         &out,
+		errOut:      &out,
+		saveOptions: func(opts transferOptions) error { saved = opts; return nil },
+	}
+	app.configureTransfers()
+	if !saved.AutoWorkers || saved.Workers != 3 {
+		t.Fatalf("expected auto-workers preset saved, got %+v", saved)
+	}
+	args := app.transferArgs("resume", strings.Repeat("a", 32))
+	if !strings.Contains(strings.Join(args, " "), "--auto-workers") {
+		t.Fatalf("expected --auto-workers in args, got %v", args)
+	}
+}

@@ -135,10 +135,17 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		}
 		return pending[i].id < pending[j].id
 	})
+	maxPool := e.Workers
+	if maxPool < 1 {
+		maxPool = 1
+	}
+	if e.AutoWorkers {
+		maxPool = 8
+	}
 	tasks := make(chan transferTask)
-	results := make(chan transferResult, e.Workers)
+	results := make(chan transferResult, maxPool)
 	var workers sync.WaitGroup
-	for range e.Workers {
+	for range maxPool {
 		workers.Go(func() {
 			for task := range tasks {
 				fmt.Fprintf(e.Progress, "[%d/%d] %q: %s\n", task.id, len(ids), task.item.Path, task.item.State)
@@ -151,7 +158,43 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		})
 	}
 	defer func() { close(tasks); workers.Wait() }()
-	fmt.Fprintf(e.Progress, "Transfers: up to %d parallel files; shared staging cap %.1f GiB. Library creation stays sequential.\n", e.Workers, float64(meta.CacheBytes)/(1<<30))
+
+	currentLimit := e.Workers
+	if currentLimit < 1 {
+		currentLimit = 1
+	}
+	minLimit := 2
+	maxLimit := 8
+	var autoMu sync.Mutex
+	consecutiveSuccess := 0
+
+	if e.AutoWorkers {
+		if currentLimit < minLimit {
+			currentLimit = minLimit
+		}
+		if currentLimit > maxLimit {
+			currentLimit = maxLimit
+		}
+		e.retryMu.Lock()
+		e.onThrottle = func() {
+			autoMu.Lock()
+			defer autoMu.Unlock()
+			consecutiveSuccess = 0
+			if currentLimit > minLimit {
+				currentLimit = max(minLimit, currentLimit-2)
+				fmt.Fprintf(e.Progress, "Auto-workers: throttled down to %d workers due to network backoff\n", currentLimit)
+			}
+		}
+		e.retryMu.Unlock()
+		defer func() {
+			e.retryMu.Lock()
+			e.onThrottle = nil
+			e.retryMu.Unlock()
+		}()
+		fmt.Fprintf(e.Progress, "Transfers: auto-tuning workers (%d-%d, starting at %d); shared staging cap %.1f GiB. Library creation stays sequential.\n", minLimit, maxLimit, currentLimit, float64(meta.CacheBytes)/(1<<30))
+	} else {
+		fmt.Fprintf(e.Progress, "Transfers: up to %d parallel files; shared staging cap %.1f GiB. Library creation stays sequential.\n", e.Workers, float64(meta.CacheBytes)/(1<<30))
+	}
 	timer := time.NewTimer(batchWait)
 	defer timer.Stop()
 	started := time.Now()
@@ -226,8 +269,14 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		}
 		// Look for any fitting file, so a large waiting file cannot prevent existing
 		// staged files from finishing and releasing their reservations.
+		limit := e.Workers
+		if e.AutoWorkers {
+			autoMu.Lock()
+			limit = currentLimit
+			autoMu.Unlock()
+		}
 		index := -1
-		if firstErr == nil && active < e.Workers && (!batching || len(queue) < batchSize) {
+		if firstErr == nil && active < limit && (!batching || len(queue) < batchSize) {
 			for i, task := range pending {
 				if task.reserved-allocated[task.id] <= capacity-used {
 					index = i
@@ -254,7 +303,7 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 			}
 			continue
 		}
-		if firstErr == nil && !committing && len(queue) > 0 && active < e.Workers && len(pending) > 0 {
+		if firstErr == nil && !committing && len(queue) > 0 && active < limit && len(pending) > 0 {
 			commit("staging")
 			continue
 		}
@@ -289,6 +338,16 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		}
 
 		active--
+		if e.AutoWorkers && result.err == nil {
+			autoMu.Lock()
+			consecutiveSuccess++
+			if consecutiveSuccess >= 3 && currentLimit < maxLimit {
+				currentLimit++
+				consecutiveSuccess = 0
+				fmt.Fprintf(e.Progress, "Auto-workers: scaled up to %d workers on stable network\n", currentLimit)
+			}
+			autoMu.Unlock()
+		}
 		if result.err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("file %d: %w", result.task.id, result.err)
 			cancel(firstErr)

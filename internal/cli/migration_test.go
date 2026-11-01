@@ -171,3 +171,16 @@ func TestBatchFlagValidationPrecedesJobAccess(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoWorkersFlagValidation(t *testing.T) {
+	for _, tc := range []struct{ command, want string }{
+		{"plan", "--workers is supported by run and resume"},
+		{"status", "--workers is supported by run and resume"},
+	} {
+		var out, errOut bytes.Buffer
+		code := migrationCommand(context.Background(), tc.command, []string{"--auto-workers"}, strings.NewReader(""), &out, &errOut, func(string) string { return "" }, t.TempDir())
+		if code != 2 || !strings.Contains(errOut.String(), tc.want) {
+			t.Fatalf("auto-workers flag accepted for %s: %d %s", tc.command, code, errOut.String())
+		}
+	}
+}

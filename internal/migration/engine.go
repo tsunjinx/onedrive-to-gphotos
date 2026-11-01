@@ -37,10 +37,12 @@ type Engine struct {
 	Progress          io.Writer
 	Reconcile         bool
 	AutoRetryCreation bool
+	AutoWorkers       bool
 	MaxRetries        int
 	Workers           int
 	BatchSize         int
 	BatchWait         time.Duration
+	onThrottle        func()
 	deferCreate       bool
 	retryMu           sync.Mutex
 	retryWait         func(context.Context, time.Duration) error
