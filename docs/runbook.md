@@ -297,3 +297,13 @@ Folder-only migrations, standalone `source scan`, and interactive browsing retai
 An already running process keeps its original code. To use this update, stop with Ctrl+C, update the source, reopen the menu and Continue the same job. An old incomplete inventory has no delta checkpoint and restarts once with the new scanner; later interruptions reuse saved delta pages. Completed upload history is preserved. On Windows, update the existing Git clone with `git pull --ff-only`, then open `od2gp.cmd` and choose **3 — Continue a saved migration**. If the old folder came from a ZIP, extract the new version into a separate folder and keep the old folder until the same saved job is visible. Do not create another migration to resume. Consider letting a nearly finished scan complete instead.
 
 The deterministic 40-folder fixture produces the same 40 files with 41 children requests versus one delta response. This validates request reduction for that fixture, not real-account throughput. Native Windows CI and a representative live read-only scan are separate acceptance gates.
+
+## Upload pipeline and automatic cache cleanup
+
+File workers continue receiving work while the single committer is waiting for Google batch creation. There is at most one active batch; waiting tokens are bounded by the configured batch size plus finishing workers, and all queued/in-flight content remains covered by the shared staging reservation. Full, timer, staging-pressure and final-tail flush reasons are printed.
+
+After Google returns a media ID, the job saves that result durably before deleting the file's encrypted `stage-*.bin`. Successful items in a partial batch are cleaned even when other items fail. Videos release staging before READY polling; status checks follow the transfer pass and resume by their saved IDs. Upload tokens awaiting creation and uncertain creation results retain their staged bytes for recovery. The encrypted journal remains for progress and duplicate prevention within the same job.
+
+The summary reports wall time for the transfer pass, logical batches/items and staging reservation peak/released space. Reservation release is not a physical disk-I/O measurement. Per-file timings include source version checks with download, and session setup/resume with byte upload. Provider pauses can be included in those timings. Batch retries can make actual HTTP request count exceed logical batch count. Video processing time is separate.
+
+Use the existing menu and Continue the same job after updating. A process already running retains its old code; an otherwise healthy migration need not be interrupted just to install this update.

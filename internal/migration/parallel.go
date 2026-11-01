@@ -98,6 +98,12 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		if item.State == "creating" && !e.Reconcile {
 			return errors.New("destination creation outcome is uncertain; use resume --reconcile after reviewing status to retry the identical staged content")
 		}
+		if batching && item.State == "processing" {
+			if err := e.cleanupCreated(id, &item, filepath.Join(e.Directory, fmt.Sprintf("stage-%d.bin", id))); err != nil {
+				return err
+			}
+			continue
+		}
 		if item.State == "completed" || item.State == "skipped" || item.State == "processing_failed" {
 			continue
 		}
@@ -130,6 +136,12 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 	fmt.Fprintf(e.Progress, "Transfers: up to %d parallel files; shared staging cap %.1f GiB. Library creation stays sequential.\n", e.Workers, float64(meta.CacheBytes)/(1<<30))
 	timer := time.NewTimer(batchWait)
 	defer timer.Stop()
+	started := time.Now()
+	peak, reclaimed := used, int64(0)
+	batches, batchedItems := 0, 0
+	defer func() {
+		fmt.Fprintf(e.Progress, "Transfer summary: %s elapsed; %d batches, %d queued items; staging reservation peak %.2f GiB, released %.2f GiB.\n", time.Since(started).Round(time.Millisecond), batches, batchedItems, float64(peak)/(1<<30), float64(reclaimed)/(1<<30))
+	}()
 	var queue []transferTask
 	var queuedAt time.Time
 	var flush <-chan time.Time
@@ -142,42 +154,62 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		} else if !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+		if remaining < allocated[id] {
+			reclaimed += allocated[id] - remaining
+		}
 		used += remaining - allocated[id]
 		allocated[id] = remaining
 		return nil
 	}
-	commit := func() error {
-		err := e.commitBatch(ctx, meta, queue)
-		for _, task := range queue {
-			if releaseErr := release(task.id); releaseErr != nil && err == nil {
-				err = releaseErr
-			}
-		}
-		queue = nil
+	type commitResult struct {
+		tasks []transferTask
+		err   error
+	}
+	commitDone := make(chan commitResult, 1)
+	var committer sync.WaitGroup
+	defer committer.Wait()
+	committing := false
+	commit := func(reason string) {
+		n := min(batchSize, len(queue))
+		batch := append([]transferTask(nil), queue[:n]...)
+		queue = queue[n:]
 		flush = nil
-		return err
+		committing = true
+		batches++
+		batchedItems += len(batch)
+		fmt.Fprintf(e.Progress, "Queue batch: %d items; flush=%s; oldest wait %s.\n", len(batch), reason, time.Since(queuedAt).Round(time.Millisecond))
+		committer.Go(func() {
+			err := e.commitBatch(ctx, meta, batch)
+			if err != nil {
+				cancel(err)
+			}
+			commitDone <- commitResult{batch, err}
+		})
 	}
 	if batching {
 		fmt.Fprintf(e.Progress, "Batch creation: up to %d items, maximum queue wait %s; flush early for staging space.\n", batchSize, batchWait)
 	}
 	active := 0
 	var firstErr error
-	for len(pending) > 0 || active > 0 || len(queue) > 0 {
+	for len(pending) > 0 || active > 0 || len(queue) > 0 || committing {
 		if ctx.Err() != nil && firstErr == nil {
 			firstErr = context.Cause(ctx)
 			cancel(firstErr)
 		}
-		if firstErr == nil && len(queue) > 0 && (len(queue) >= batchSize || time.Since(queuedAt) >= batchWait || len(pending) == 0 && active == 0) {
-			if err := commit(); err != nil {
-				firstErr = err
-				cancel(firstErr)
+		if firstErr == nil && !committing && len(queue) > 0 && (len(queue) >= batchSize || time.Since(queuedAt) >= batchWait || len(pending) == 0 && active == 0) {
+			reason := "timer"
+			if len(queue) >= batchSize {
+				reason = "full"
+			} else if len(pending) == 0 && active == 0 {
+				reason = "end"
 			}
+			commit(reason)
 			continue
 		}
 		// Look for any fitting file, so a large waiting file cannot prevent existing
 		// staged files from finishing and releasing their reservations.
 		index := -1
-		if firstErr == nil && active < e.Workers {
+		if firstErr == nil && active < e.Workers && (!batching || len(queue) < batchSize) {
 			for i, task := range pending {
 				if task.reserved-allocated[task.id] <= capacity-used {
 					index = i
@@ -191,6 +223,7 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 			case tasks <- task:
 				used += task.reserved - allocated[task.id]
 				allocated[task.id] = task.reserved
+				peak = max(peak, used)
 				if index == 0 {
 					pending = pending[1:]
 				} else {
@@ -203,14 +236,11 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 			}
 			continue
 		}
-		if firstErr == nil && len(queue) > 0 && active < e.Workers && len(pending) > 0 {
-			if err := commit(); err != nil {
-				firstErr = err
-				cancel(firstErr)
-			}
+		if firstErr == nil && !committing && len(queue) > 0 && active < e.Workers && len(pending) > 0 {
+			commit("staging")
 			continue
 		}
-		if active == 0 {
+		if active == 0 && !committing {
 			if firstErr != nil {
 				if cause := context.Cause(ctx); cause != nil {
 					return cause
@@ -222,16 +252,24 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		var result transferResult
 		select {
 		case result = <-results:
-		case <-flush:
-			if firstErr == nil && len(queue) > 0 {
-				if err := commit(); err != nil {
+		case outcome := <-commitDone:
+			committing = false
+			if outcome.err != nil && firstErr == nil {
+				firstErr = outcome.err
+				cancel(firstErr)
+			}
+			for _, task := range outcome.tasks {
+				if err := release(task.id); err != nil && firstErr == nil {
 					firstErr = err
 					cancel(firstErr)
 				}
 			}
+			continue
+		case <-flush:
 			flush = nil
 			continue
 		}
+
 		active--
 		if result.err != nil && firstErr == nil {
 			firstErr = fmt.Errorf("file %d: %w", result.task.id, result.err)

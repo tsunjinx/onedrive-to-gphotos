@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"path/filepath"
 	"time"
 
 	"od2gp/internal/googlephotos"
@@ -23,7 +24,7 @@ func (e *Engine) saveTasks(tasks []transferTask) error {
 	return e.Store.SaveUpdates(records)
 }
 
-// The coordinator is the sole committer. Each prepared batch and its outcomes
+// A single committer owns batch creation. Each prepared batch and its outcomes
 // are atomically checkpointed; encrypted staged bytes survive ambiguous results.
 func (e *Engine) commitBatch(ctx context.Context, meta *Meta, tasks []transferTask) error {
 	photos := e.Photos.(batchPhotos)
@@ -130,7 +131,7 @@ func (e *Engine) commitBatch(ctx context.Context, meta *Meta, tasks []transferTa
 			}
 			for i := range tasks {
 				if tasks[i].item.State == "created" {
-					if err := e.transferWithRetries(ctx, meta, tasks[i].id, &tasks[i].item); err != nil && permanent == nil {
+					if err := e.cleanupCreated(tasks[i].id, &tasks[i].item, filepath.Join(e.Directory, fmt.Sprintf("stage-%d.bin", tasks[i].id))); err != nil && permanent == nil {
 						permanent = err
 					}
 				}

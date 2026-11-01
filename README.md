@@ -80,3 +80,7 @@ go build -o dist/od2gp ./cmd/od2gp
 Windows: `go build -o dist/od2gp.exe ./cmd/od2gp`. The launcher auto-installs Go (1.27.2+) if needed; no admin access required.
 
 See [plan](tasks/plan.md) · [todo](tasks/todo.md) · [platform policy](docs/platform-policy-review.md).
+
+Confirmed media creation automatically releases that file's encrypted staging cache, including videos still processing in Google Photos. Byte-upload completion alone retains staging until media creation is confirmed and journaled. Do not delete saved-job databases or manually clear the staging folder during a migration.
+
+Uploads continue while a single background committer creates media batches, within the shared staging cap. Video status polling follows the transfer pass. Progress includes download/version-check duration, upload-session duration, batch flush reason/queue age and a staging reservation summary.

@@ -183,7 +183,23 @@ func (e *Engine) Run(ctx context.Context, meta *Meta) error {
 		return err
 	}
 	if e.Workers >= 1 {
-		return e.runParallel(ctx, meta, ids)
+		if err := e.runParallel(ctx, meta, ids); err != nil {
+			return err
+		}
+		// Status polling follows transfer/commit so slow video processing cannot
+		// hold up file scheduling. Saved IDs make this phase independently resumable.
+		for _, id := range ids {
+			var item Item
+			if err := e.Store.Load(id, &item); err != nil {
+				return err
+			}
+			if item.State == "processing" {
+				if err := e.transferWithRetries(ctx, meta, id, &item); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	}
 	for _, id := range ids {
 		if err := ctx.Err(); err != nil {
@@ -224,9 +240,11 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 		return errors.New("file exceeds cache capacity; increase staging space for this saved job through Continue or resize-cache")
 	}
 	if item.State == "discovered" || item.State == "downloading" {
+		downloadStarted := time.Now()
 		if err := e.download(ctx, meta, id, item, cachePath, stageKey); err != nil {
 			return err
 		}
+		fmt.Fprintf(e.Progress, "  [%d] Download and version checks: %s.\n", id, time.Since(downloadStarted).Round(time.Millisecond))
 	}
 
 	var reader *staging.Reader
@@ -247,6 +265,7 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 	}
 	// Keep the original staged bytes until destination creation is committed.
 	if item.State == "staged" || item.State == "uploading" {
+		uploadStarted := time.Now()
 		fresh := item.Upload.URL == "" || time.Since(item.Upload.Created) > 7*24*time.Hour
 		if !fresh {
 			offset, status, queryErr := e.Photos.Query(ctx, item.Upload)
@@ -321,6 +340,7 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 				return err
 			}
 		}
+		fmt.Fprintf(e.Progress, "  [%d] Upload session and bytes: %s.\n", id, time.Since(uploadStarted).Round(time.Millisecond))
 	}
 	if item.State == "creating" {
 		if !e.Reconcile {
@@ -387,6 +407,17 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 	return nil
 }
 func (e *Engine) created(ctx context.Context, id int64, item *Item, cachePath string) error {
+	if err := e.cleanupCreated(id, item, cachePath); err != nil {
+		return err
+	}
+	if item.Video && !e.deferCreate {
+		return e.processing(ctx, id, item)
+	}
+	return nil
+}
+
+// The media ID is already durable before this deletes staged content.
+func (e *Engine) cleanupCreated(id int64, item *Item, cachePath string) error {
 	if item.MediaID == "" {
 		return errors.New("saved destination ID is missing")
 	}
@@ -399,9 +430,6 @@ func (e *Engine) created(ctx context.Context, id int64, item *Item, cachePath st
 	}
 	if err := e.Store.Save(id, item.State, item); err != nil {
 		return err
-	}
-	if item.Video {
-		return e.processing(ctx, id, item)
 	}
 	return nil
 }
