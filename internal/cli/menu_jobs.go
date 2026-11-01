@@ -107,7 +107,7 @@ func loadMenuJob(file, id string) (menuJob, error) {
 		default:
 			job.Incomplete = true
 		}
-		if item.State == "creating" {
+		if item.State == "creating" && !item.CanRetryCreation(time.Now()) {
 			job.Uncertain++
 		}
 		if item.State == "processing" {

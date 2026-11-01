@@ -95,7 +95,7 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 		if err := e.Store.Load(id, &item); err != nil {
 			return err
 		}
-		if item.State == "creating" && !e.Reconcile {
+		if item.State == "creating" && !e.Reconcile && !(e.AutoRetryCreation && item.CanRetryCreation(time.Now())) {
 			return errors.New("destination creation outcome is uncertain; use resume --reconcile after reviewing status to retry the identical staged content")
 		}
 		if batching && item.State == "processing" {

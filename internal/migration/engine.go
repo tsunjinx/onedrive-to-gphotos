@@ -29,19 +29,20 @@ type Photos interface {
 	Get(context.Context, string) (googlephotos.Media, error)
 }
 type Engine struct {
-	Store       *journal.Store
-	Source      Source
-	Photos      Photos
-	Directory   string
-	Progress    io.Writer
-	Reconcile   bool
-	MaxRetries  int
-	Workers     int
-	BatchSize   int
-	BatchWait   time.Duration
-	deferCreate bool
-	retryMu     sync.Mutex
-	retryWait   func(context.Context, time.Duration) error
+	Store             *journal.Store
+	Source            Source
+	Photos            Photos
+	Directory         string
+	Progress          io.Writer
+	Reconcile         bool
+	AutoRetryCreation bool
+	MaxRetries        int
+	Workers           int
+	BatchSize         int
+	BatchWait         time.Duration
+	deferCreate       bool
+	retryMu           sync.Mutex
+	retryWait         func(context.Context, time.Duration) error
 }
 
 func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
@@ -264,7 +265,7 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 	}
 
 	var reader *staging.Reader
-	if item.State != "uploaded" && !(item.State == "creating" && !e.Reconcile) {
+	if item.State != "uploaded" && !(item.State == "creating" && !e.Reconcile && !e.AutoRetryCreation) {
 		var err error
 		reader, err = staging.Open(cachePath, stageKey, item.Source.Size)
 		if err != nil {
@@ -359,7 +360,7 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 		fmt.Fprintf(e.Progress, "  [%d] Upload session and bytes: %s.\n", id, time.Since(uploadStarted).Round(time.Millisecond))
 	}
 	if item.State == "creating" {
-		if !e.Reconcile {
+		if !e.Reconcile && !(e.AutoRetryCreation && item.CanRetryCreation(time.Now())) {
 			return errors.New("destination creation outcome is uncertain; use resume --reconcile after reviewing status to retry the identical staged content")
 		}
 		// Verify the original staged bytes before explicitly retrying an uncertain creation.
@@ -370,9 +371,13 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 		if hex.EncodeToString(hash.Sum(nil)) != item.Hash {
 			return errors.New("staged content differs from the uncertain original upload")
 		}
-		item.State = "staged"
-		item.Upload = googlephotos.Session{}
-		item.Token = ""
+		if e.AutoRetryCreation && item.CanRetryCreation(time.Now()) {
+			item.State = "uploaded"
+		} else {
+			item.State = "staged"
+			item.Upload = googlephotos.Session{}
+			item.Token = ""
+		}
 		if err := save(); err != nil {
 			return err
 		}

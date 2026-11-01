@@ -39,6 +39,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	reconcile := flags.Bool("reconcile", false, "allow identical-byte retry of an uncertain creation")
 	wait := flags.Bool("wait", false, "check pending videos for up to 30 minutes")
 	batchSize := flags.Int("batch-size", 50, "maximum items per sequential Google creation batch (1-50)")
+	autoRetryCreation := flags.Bool("auto-retry-creation", true, "retry temporary creation errors with the original upload tokens")
 	verbose := flags.Bool("verbose", false, "show detailed transfer logs instead of the interactive progress bar")
 	workers := flags.Int("workers", 3, "parallel file transfers (1-8); library creation remains sequential")
 	retries := flags.Int("retries", 5, "automatic retries per file for temporary upload/download failures (0-10)")
@@ -295,7 +296,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 			return fail(err)
 		}
 	}
-	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, MaxRetries: *retries, Workers: *workers, BatchSize: *batchSize}
+	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, AutoRetryCreation: *autoRetryCreation, MaxRetries: *retries, Workers: *workers, BatchSize: *batchSize}
 	if command == "plan" {
 		meta = migration.Meta{SourceBackend: backend, SourceSubject: microsoftSession.Account.Subject, SourceClient: microsoftSession.ClientID, ID: *jobID, Folder: selected, DriveID: driveID, GoogleSubject: session.Account.Subject, GoogleClient: session.ClientID, CacheBytes: *cacheGiB << 30, ExcludedFolders: excludedFolders, ExcludePersonalVault: *excludeVault, Created: time.Now().UTC()}
 		if err := store.Save(0, "job", meta); err != nil {

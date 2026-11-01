@@ -36,6 +36,9 @@ func (e *Engine) commitBatch(ctx context.Context, meta *Meta, tasks []transferTa
 		for i := range tasks {
 			item := &tasks[i].item
 			if item.Token == "" || time.Since(item.TokenTime) > 23*time.Hour {
+				if item.State == "creating" {
+					return errors.New("uncertain creation token expired; explicit recovery is required")
+				}
 				// Only this token must be refreshed. Other uploaded items remain queued.
 				item.State = "staged"
 				item.Upload = googlephotos.Session{}
@@ -78,6 +81,14 @@ func (e *Engine) commitBatch(ctx context.Context, meta *Meta, tasks []transferTa
 			}
 			if err := e.saveTasks(tasks); err != nil {
 				return err
+			}
+			var connection *googlephotos.ConnectionError
+			automatic := e.AutoRetryCreation && (api != nil && api.Code >= 500 && api.Code < 600 || errors.As(requestErr, &connection))
+			if automatic {
+				if err := e.scheduleRetry(ctx, meta, api, attempt, false, requestErr); err != nil {
+					return err
+				}
+				continue
 			}
 			if !safe || api.Code != 429 {
 				// Save provider pauses, but never auto-retry an ambiguous creation.

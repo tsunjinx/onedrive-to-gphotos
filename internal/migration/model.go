@@ -89,3 +89,9 @@ func classify(item onedrive.Item) (string, bool, string) {
 	}
 	return mime, video, ""
 }
+
+// CanRetryCreation permits reuse of the original token, never a fresh upload.
+// Leave a one-hour margin before Google's one-day token expiry.
+func (item Item) CanRetryCreation(now time.Time) bool {
+	return item.Token != "" && !item.TokenTime.IsZero() && now.Sub(item.TokenTime) < 23*time.Hour && !item.TokenTime.After(now)
+}

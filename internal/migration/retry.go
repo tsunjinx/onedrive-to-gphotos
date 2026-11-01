@@ -45,7 +45,7 @@ func (e *Engine) transferWithRetries(ctx context.Context, meta *Meta, id int64, 
 		if !retryable {
 			return err
 		}
-		if retryErr := e.scheduleRetry(ctx, meta, api, attempt, committed.State == "creating", err); retryErr != nil {
+		if retryErr := e.scheduleRetry(ctx, meta, api, attempt, committed.State == "creating" && !(e.AutoRetryCreation && committed.CanRetryCreation(time.Now())), err); retryErr != nil {
 			return retryErr
 		}
 		*item = committed

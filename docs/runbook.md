@@ -120,7 +120,7 @@ Read the summary and destination account, then type `yes`. Downloads and uploads
 
 - `--retries 5` permits up to five retries per file for recoverable Google failures. Delays increase from about 30 seconds to five minutes; a longer provider pause takes precedence. Pauses above 15 minutes stop with a time for a later resume. `--retries 0` disables automatic retries.
 - `--wait` polls pending videos for up to 30 minutes after the initial transfer pass. It does not limit the duration of the uploads themselves. If videos are still processing afterward, resume later; they are checked by destination ID without being uploaded again.
-- Source, sign-in, permanent and uncertain-creation errors stop with saved progress. Do not repeatedly create new plans to bypass a failure.
+- Source, sign-in and permanent errors stop with saved progress. Temporary creation failures retry with the original upload tokens; exhausted retries and unrecoverable creation outcomes stop with saved progress. Do not repeatedly create new plans to bypass a failure.
 
 For a root job used as its own trial, press Ctrl+C after a few items have completed and inspect those items before continuing. Files may be encountered in an order that does not include a video early; do not treat a photo-only sample as proof of video compatibility.
 
@@ -171,7 +171,9 @@ For an uncertain creation, retain the original encrypted staging and job keys. T
 bash scripts/od2gp.sh resume --job JOB_ID --wait --retries 5 --reconcile
 ```
 
-It verifies the staged hash and permits an identical-byte retry. It does not authorize an automatic loop of uncertain creations. Real same-bytes reconciliation remains a live validation gate; normal resume stops at this state.
+By default, run/resume automatically retries creation failures caused by network interruptions or HTTP 5xx, using the same upload tokens and sequential batches. Retries use the configured budget (five by default), exponential backoff starting at 30 seconds, and honor Retry-After. Continue also verifies retained staged bytes and reuses an uncertain creation token while it is less than 23 hours old. It never automatically reuploads expired uncertain content. Disable with `--auto-retry-creation=false`.
+
+The explicit recovery command above is needed when the token is missing/expired. It verifies the staged hash before allowing a fresh identical-byte upload. Missing/corrupt staging stops recovery. Live provider behavior is still a validation gate; local tests cover token reuse, retry bounds and resume.
 
 ## 7. Continue to the full library and finish
 
@@ -245,7 +247,7 @@ Choose **8 — Transfer speed & options** to set speed once. Recommended resets 
 
 Preferences are saved in a separate private `menu.json` under the user od2gp configuration directory. It contains no account credentials. On the next launch, the menu displays and reuses these values automatically for New migration and Continue. Source scope, account bindings and staging cap remain those of the saved job. Explicit terminal commands retain their own flags/defaults.
 
-A job with uncertain creation results is marked **needs recovery**. Choose Continue, select that job, then either review progress, explicitly retry uncertain items from verified original files, or go back. The retry choice applies to that run only; it is never saved as an automatic preference. Keep original encrypted staging and job keys. Ctrl+C exits with saved progress; reopen the menu and select Continue. No sign-in or media transfer starts simply from opening the menu or changing settings.
+A job with uncertain creation results and a missing/expired token is marked **needs recovery**. Valid retained tokens recover automatically on Continue with the default retry settings. Choose Continue, select that job, then either review progress, explicitly retry uncertain items from verified original files, or go back. The retry choice applies to that run only; it is never saved as an automatic preference. Keep original encrypted staging and job keys. Ctrl+C exits with saved progress; reopen the menu and select Continue. No sign-in or media transfer starts simply from opening the menu or changing settings.
 
 ## English / Tiếng Việt
 
