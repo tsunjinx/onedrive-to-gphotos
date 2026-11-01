@@ -29,14 +29,16 @@ type Client struct {
 	ExcludePersonalVault bool
 }
 type Item struct {
-	Path     string            `json:"Path"`
-	Name     string            `json:"Name"`
-	Size     int64             `json:"Size"`
-	MimeType string            `json:"MimeType"`
-	ModTime  string            `json:"ModTime"`
-	IsDir    bool              `json:"IsDir"`
-	ID       string            `json:"ID"`
-	Hashes   map[string]string `json:"Hashes"`
+	Width, Height int64
+	TakenTime     string
+	Path          string            `json:"Path"`
+	Name          string            `json:"Name"`
+	Size          int64             `json:"Size"`
+	MimeType      string            `json:"MimeType"`
+	ModTime       string            `json:"ModTime"`
+	IsDir         bool              `json:"IsDir"`
+	ID            string            `json:"ID"`
+	Hashes        map[string]string `json:"Hashes"`
 }
 type Question struct {
 	State  string

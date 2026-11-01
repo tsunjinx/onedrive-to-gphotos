@@ -194,3 +194,22 @@ func (s *Store) saveRecords(records []Record, update bool) error {
 	}
 	return tx.Commit()
 }
+
+// StateCounts reads only summary states, never decrypting media records.
+func (s *Store) StateCounts() (map[string]int, error) {
+	rows, err := s.db.Query("SELECT state,COUNT(*) FROM records WHERE id>0 GROUP BY state")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return nil, err
+		}
+		counts[state] = count
+	}
+	return counts, rows.Err()
+}

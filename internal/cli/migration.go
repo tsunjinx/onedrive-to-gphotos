@@ -39,6 +39,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	reconcile := flags.Bool("reconcile", false, "allow identical-byte retry of an uncertain creation")
 	wait := flags.Bool("wait", false, "check pending videos for up to 30 minutes")
 	batchSize := flags.Int("batch-size", 50, "maximum items per sequential Google creation batch (1-50)")
+	verbose := flags.Bool("verbose", false, "show detailed transfer logs instead of the interactive progress bar")
 	workers := flags.Int("workers", 3, "parallel file transfers (1-8); library creation remains sequential")
 	retries := flags.Int("retries", 5, "automatic retries per file for temporary upload/download failures (0-10)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
@@ -351,9 +352,23 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 			return 1
 		}
 	}
-	if err := engine.Run(ctx, &meta); err != nil {
-		return fail(err)
+	options, _ := loadMenuOptions(root)
+	progress, closeProgress := startTransferDisplay(store, errOut, *verbose, options.Language)
+	defer closeProgress()
+	engine.Progress = progress
+	runErr := engine.Run(ctx, &meta)
+	closeProgress()
+	engine.Progress = errOut
+	if runErr != nil {
+		return fail(runErr)
 	}
+	verifyCtx, cancelVerify := context.WithTimeout(ctx, 5*time.Minute)
+	verifyErr := engine.VerifyReviews(verifyCtx, &meta)
+	cancelVerify()
+	if verifyErr != nil {
+		return fail(fmt.Errorf("metadata verification incomplete; saved transfers retained: %w", verifyErr))
+	}
+
 	if *wait {
 		waitCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 		err := engine.WaitForVideos(waitCtx, &meta)
@@ -518,12 +533,13 @@ func writeMigrationReport(store *journal.Store, meta migration.Meta, format stri
 			return err
 		}
 		row := struct {
-			Source      string `json:"source"`
-			Bytes       int64  `json:"bytes"`
-			State       string `json:"state"`
-			Destination string `json:"destination_id,omitempty"`
-			Reason      string `json:"reason,omitempty"`
-		}{item.Path, item.Source.Size, item.State, item.MediaID, item.Reason}
+			Source       string `json:"source"`
+			Bytes        int64  `json:"bytes"`
+			State        string `json:"state"`
+			Destination  string `json:"destination_id,omitempty"`
+			Reason       string `json:"reason,omitempty"`
+			Verification string `json:"verification,omitempty"`
+		}{item.Path, item.Source.Size, item.State, item.MediaID, item.Reason, item.Verification}
 		if err := encoder.Encode(row); err != nil {
 			return err
 		}

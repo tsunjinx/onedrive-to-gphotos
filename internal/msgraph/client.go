@@ -40,10 +40,15 @@ type Drive struct {
 type resource struct {
 	ID, Name string
 	Size     int64
-	ETag     string `json:"eTag"`
-	CTag     string `json:"cTag"`
-	Modified string `json:"lastModifiedDateTime"`
-	File     *struct {
+	ETag     string                         `json:"eTag"`
+	CTag     string                         `json:"cTag"`
+	Modified string                         `json:"lastModifiedDateTime"`
+	Image    *struct{ Width, Height int64 } `json:"image"`
+	Video    *struct{ Width, Height int64 } `json:"video"`
+	Photo    *struct {
+		Taken string `json:"takenDateTime"`
+	} `json:"photo"`
+	File *struct {
 		MIME string `json:"mimeType"`
 	} `json:"file"`
 	Folder  *struct{}       `json:"folder"`
@@ -53,6 +58,17 @@ type resource struct {
 
 func (r resource) item(name string) onedrive.Item {
 	item := onedrive.Item{ID: r.ID, Name: r.Name, Path: name, Size: r.Size, ModTime: r.Modified, IsDir: r.Folder != nil && r.Package == nil, Hashes: map[string]string{}}
+	if r.Image != nil {
+		item.Width = r.Image.Width
+		item.Height = r.Image.Height
+	}
+	if r.Video != nil {
+		item.Width = r.Video.Width
+		item.Height = r.Video.Height
+	}
+	if r.Photo != nil {
+		item.TakenTime = r.Photo.Taken
+	}
 	if r.File != nil {
 		item.MimeType = r.File.MIME
 	}
@@ -260,12 +276,18 @@ func (c Client) Check(ctx context.Context) error {
 	return nil
 }
 func (c Client) Stat(ctx context.Context, name string) (onedrive.Item, error) {
+	return c.stat(ctx, name, fields)
+}
+func (c Client) StatMetadata(ctx context.Context, name string) (onedrive.Item, error) {
+	return c.stat(ctx, name, fields+",image,photo,video")
+}
+func (c Client) stat(ctx context.Context, name, selectedFields string) (onedrive.Item, error) {
 	address, err := c.resourceURL(name)
 	if err != nil {
 		return onedrive.Item{}, err
 	}
 	var r resource
-	if err := c.get(ctx, address+"?$select="+fields, &r); err != nil {
+	if err := c.get(ctx, address+"?$select="+selectedFields, &r); err != nil {
 		return onedrive.Item{}, err
 	}
 	if r.ID == "" || r.Folder != nil || r.File == nil || len(r.Remote) > 0 && string(r.Remote) != "null" {

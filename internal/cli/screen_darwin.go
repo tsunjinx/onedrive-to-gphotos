@@ -17,3 +17,13 @@ func terminalInput(file *os.File) bool {
 	_, err := unix.IoctlGetTermios(int(file.Fd()), unix.TIOCGETA)
 	return err == nil
 }
+
+func enableProgressOutput(file *os.File) (func(), bool) { return func() {}, terminalInput(file) }
+
+func progressColumns(file *os.File) int {
+	size, err := unix.IoctlGetWinsize(int(file.Fd()), unix.TIOCGWINSZ)
+	if err == nil && size.Col > 0 {
+		return int(size.Col)
+	}
+	return 80
+}

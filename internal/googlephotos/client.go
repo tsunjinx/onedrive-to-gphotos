@@ -26,8 +26,13 @@ type Session struct {
 }
 type Media struct {
 	ID       string `json:"id"`
+	Filename string `json:"filename"`
+	MIME     string `json:"mimeType"`
 	Metadata struct {
-		Video *struct {
+		Width        string `json:"width"`
+		Height       string `json:"height"`
+		CreationTime string `json:"creationTime"`
+		Video        *struct {
 			Status string `json:"status"`
 		} `json:"video"`
 	} `json:"mediaMetadata"`

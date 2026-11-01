@@ -84,3 +84,7 @@ See [plan](tasks/plan.md) · [todo](tasks/todo.md) · [platform policy](docs/pla
 Confirmed media creation automatically releases that file's encrypted staging cache, including videos still processing in Google Photos. Byte-upload completion alone retains staging until media creation is confirmed and journaled. Do not delete saved-job databases or manually clear the staging folder during a migration.
 
 Uploads continue while a single background committer creates media batches, within the shared staging cap. Video status polling follows the transfer pass. Progress includes download/version-check duration, upload-session duration, batch flush reason/queue age and a staging reservation summary.
+
+Interactive transfers now show a single updating progress bar with remaining files, review count, elapsed time and approximate ETA. The selected menu language applies. ETA uses newly confirmed files in the current run, so it may vary for mixed photos/large videos; Google video-processing time is separate. Use `--verbose` for detailed transfer logs. Redirected output keeps ordinary logs without terminal control codes.
+
+After the transfer pass, review items can be matched against accessible app-created Google media by exact filename, MIME, dimensions and capture timestamp. Only one unique matching media ID is accepted and rechecked. Missing metadata or multiple matches stay unresolved with staging retained. JSON reports identify accepted matches as `verification: filename_metadata`; this is the selected metadata policy, not byte-for-byte verification.

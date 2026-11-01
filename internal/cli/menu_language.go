@@ -52,7 +52,7 @@ var vietnameseMenu = map[string]string{
 	"Press Enter to return to the menu": "Nhấn Enter để quay lại menu",
 	"Transfer stopped. Review the message above; choose Continue to use the same saved job.":                                     "Đã dừng truyền. Xem thông báo phía trên; chọn Tiếp tục để dùng lại tác vụ đã lưu.",
 	"Videos are still processing. Choose Continue later to check them again.":                                                    "Video vẫn đang được xử lý. Chọn Tiếp tục sau để kiểm tra lại.",
-	"Some videos failed processing. View job progress or export a report for details.":                                           "Một số video xử lý thất bại. Xem tiến trình hoặc xuất báo cáo để biết chi tiết.",
+	"Some files need review or videos failed processing. View job progress or export a report for details.":                      "Một số tệp cần kiểm tra hoặc video xử lý thất bại. Xem tiến trình hoặc xuất báo cáo để biết chi tiết.",
 	"Both connections work. You can plan or continue a migration.":                                                               "Cả hai tài khoản đều kết nối được. Bạn có thể tạo hoặc tiếp tục tác vụ.",
 	"Choose a OneDrive folder. / means the entire drive.\nA new plan has separate history; use Continue for an interrupted job.": "Chọn thư mục OneDrive. / nghĩa là toàn bộ ổ đĩa.\nTác vụ mới có lịch sử riêng; hãy chọn Tiếp tục cho tác vụ bị gián đoạn.",
 	"OneDrive folder":                                         "Thư mục OneDrive",

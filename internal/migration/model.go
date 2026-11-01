@@ -33,6 +33,7 @@ type Meta struct {
 	RetryAt                                          time.Time
 }
 type Item struct {
+	Verification                             string
 	Source                                   onedrive.Item
 	Path, MIME, State, Reason, Hash, MediaID string
 	Video                                    bool

@@ -62,7 +62,7 @@ func (a *menuApp) execute(args []string, out io.Writer) int {
 		case 3:
 			fmt.Fprintln(a.out, a.t("Videos are still processing. Choose Continue later to check them again."))
 		case 4:
-			fmt.Fprintln(a.out, a.t("Some videos failed processing. View job progress or export a report for details."))
+			fmt.Fprintln(a.out, a.t("Some files need review or videos failed processing. View job progress or export a report for details."))
 		}
 	}
 	return code
