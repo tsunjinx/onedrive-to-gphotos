@@ -285,3 +285,9 @@ bash scripts/od2gp.sh resize-cache --job JOB_ID --cache-gib 60
 ```
 
 Source resume verifies each complete encrypted 4 MiB chunk and rebuilds the whole-file hash. Only a torn trailing record is discarded. Corrupt authenticated chunks stop recovery. Source versions are checked before and after downloading. If Graph returns a full response instead of the requested Range, only that unfinished file restarts from zero. These checks support process restart but do not replace the outstanding real power-loss trial.
+
+## Graph inventory prefetch
+
+Native Graph scans prefetch the first page of up to three pending folders while validating and recording results serially. This overlaps folder-request latency; it does not change upload workers, job identity or scope. Pagination within a folder stays sequential, and Graph retry pauses remain respected. Scan counters include elapsed time and files per minute. Gains depend on folder layout, latency and throttling; no live throughput guarantee is implied.
+
+An already running process keeps its original code. To use this update, stop with Ctrl+C, update the source, reopen the menu and Continue the same job. An incomplete inventory restarts from the beginning; completed upload history is preserved. Consider letting a nearly finished scan complete instead.

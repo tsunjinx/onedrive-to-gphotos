@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"od2gp/internal/onedrive"
@@ -284,12 +285,42 @@ func (c Client) List(ctx context.Context, folder string, recursive bool, visit f
 		return err
 	}
 	type directory struct{ address, prefix string }
+	// Prefetch only the first page of up to three pending folders. Inventory
+	// validation and visitor calls remain serialized in the original DFS order.
+	ctx, cancel := context.WithCancel(ctx)
+	var fetching sync.WaitGroup
+	defer func() { cancel(); fetching.Wait() }()
+	type inventoryPage struct {
+		Value []resource
+		Next  string `json:"@odata.nextLink"`
+	}
+	type fetchedPage struct {
+		page inventoryPage
+		err  error
+	}
+	prefetched := make(map[string]chan fetchedPage)
+	firstPage := func(address string) string { return address + "/children?$top=200&$select=" + fields }
 	pending := []directory{{address, ""}}
 	seen := map[string]bool{}
 	for len(pending) > 0 {
+		for i := len(pending) - 1; i >= 0 && len(prefetched) < 3; i-- {
+			address := pending[i].address
+			if _, exists := prefetched[address]; exists {
+				continue
+			}
+			result := make(chan fetchedPage, 1)
+			prefetched[address] = result
+			fetching.Add(1)
+			go func(address string, result chan fetchedPage) {
+				defer fetching.Done()
+				var page inventoryPage
+				err := c.get(ctx, firstPage(address), &page)
+				result <- fetchedPage{page, err}
+			}(address, result)
+		}
 		dir := pending[len(pending)-1]
 		pending = pending[:len(pending)-1]
-		next := dir.address + "/children?$top=200&$select=" + fields
+		next := firstPage(dir.address)
 		pages := map[string]bool{}
 		for next != "" {
 			if err := ctx.Err(); err != nil {
@@ -299,11 +330,20 @@ func (c Client) List(ctx context.Context, folder string, recursive bool, visit f
 				return errors.New("Graph inventory pagination repeated a page")
 			}
 			pages[next] = true
-			var page struct {
-				Value []resource
-				Next  string `json:"@odata.nextLink"`
-			}
-			if err := c.get(ctx, next, &page); err != nil {
+			var page inventoryPage
+			if ready, exists := prefetched[dir.address]; exists && next == firstPage(dir.address) {
+				var fetched fetchedPage
+				select {
+				case fetched = <-ready:
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+				delete(prefetched, dir.address)
+				if fetched.err != nil {
+					return fetched.err
+				}
+				page = fetched.page
+			} else if err := c.get(ctx, next, &page); err != nil {
 				return err
 			}
 			if page.Value == nil {

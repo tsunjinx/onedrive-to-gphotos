@@ -61,6 +61,7 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 		return err
 	}
 	var id int64
+	scanStarted := time.Now()
 	batch := make([]journal.Record, 0, 100)
 	flush := func() error {
 		if len(batch) == 0 {
@@ -95,7 +96,7 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 			if err := flush(); err != nil {
 				return err
 			}
-			fmt.Fprintf(e.Progress, "Scanned %d source files...\n", id)
+			fmt.Fprintf(e.Progress, "Scanned %d source files... elapsed %s (%.0f files/min)\n", id, time.Since(scanStarted).Round(time.Second), float64(id)/time.Since(scanStarted).Minutes())
 		}
 		return nil
 	})
