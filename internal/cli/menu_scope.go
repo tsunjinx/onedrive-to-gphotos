@@ -66,6 +66,7 @@ func (a *menuApp) confirmOverlap(candidate menuJob, jobs []menuJob) bool {
 	}
 	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, a.t("Potential overlap with saved migration history. Jobs do not share completion records; already copied files may be uploaded again.\nVerify the source drive and destination account. Use Continue on the original job to preserve its history."))
+	fmt.Fprintln(a.out, a.t("Cross-job deduplication is enabled: files already completed in matching saved jobs will be automatically skipped."))
 	for i, job := range matches {
 		if i == 5 {
 			fmt.Fprintf(a.out, a.t("  ...and %d more possibly overlapping jobs.\n"), len(matches)-5)

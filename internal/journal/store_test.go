@@ -137,3 +137,57 @@ func TestScanPageAndCursorCommitAtomically(t *testing.T) {
 		t.Fatal("cursor saved in plaintext")
 	}
 }
+
+func TestLoadRecordsFiltersAndDecrypts(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "records.db"), bytes.Repeat([]byte{8}, 32), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	if err := s.Save(1, "discovered", map[string]string{"name": "file-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(2, "completed", map[string]string{"name": "file-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(3, "completed", map[string]string{"name": "file-3"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(4, "needs_review", map[string]string{"name": "file-4"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var completedIDs []int64
+	var completedNames []string
+	err = s.LoadRecords("completed", func(id int64, state string, plain []byte) error {
+		completedIDs = append(completedIDs, id)
+		var val map[string]string
+		if err := json.Unmarshal(plain, &val); err != nil {
+			return err
+		}
+		completedNames = append(completedNames, val["name"])
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(completedIDs) != 2 || completedIDs[0] != 2 || completedIDs[1] != 3 {
+		t.Fatalf("unexpected completed IDs: %v", completedIDs)
+	}
+	if len(completedNames) != 2 || completedNames[0] != "file-2" || completedNames[1] != "file-3" {
+		t.Fatalf("unexpected completed names: %v", completedNames)
+	}
+
+	var allIDs []int64
+	err = s.LoadRecords("", func(id int64, state string, plain []byte) error {
+		allIDs = append(allIDs, id)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allIDs) != 4 {
+		t.Fatalf("expected 4 records, got %d", len(allIDs))
+	}
+}

@@ -45,6 +45,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	workers := flags.String("workers", "3", "parallel file transfers (1-8 or 'auto'); library creation remains sequential")
 	autoWorkers := flags.Bool("auto-workers", false, "dynamically adjust workers (2-8) based on network performance and stability")
 	retries := flags.Int("retries", 5, "automatic retries per file for temporary upload/download failures (0-10)")
+	crossJobDedup := flags.Bool("cross-job-dedup", true, "automatically skip files already completed in other saved jobs for the same drive and destination")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
@@ -311,7 +312,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 			return fail(err)
 		}
 	}
-	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, AutoRetryCreation: *autoRetryCreation, AutoWorkers: isAutoWorkers, MaxRetries: *retries, Workers: workerCount, BatchSize: *batchSize}
+	engine := migration.Engine{Store: store, Source: source, Photos: photos, Directory: directory, Progress: errOut, Reconcile: *reconcile, AutoRetryCreation: *autoRetryCreation, AutoWorkers: isAutoWorkers, DisableCrossJobDedup: !*crossJobDedup, MaxRetries: *retries, Workers: workerCount, BatchSize: *batchSize}
 	if command == "plan" {
 		meta = migration.Meta{SourceBackend: backend, SourceSubject: microsoftSession.Account.Subject, SourceClient: microsoftSession.ClientID, ID: *jobID, Folder: selected, DriveID: driveID, GoogleSubject: session.Account.Subject, GoogleClient: session.ClientID, CacheBytes: *cacheGiB << 30, ExcludedFolders: excludedFolders, ExcludePersonalVault: *excludeVault, Created: time.Now().UTC()}
 		if err := store.Save(0, "job", meta); err != nil {

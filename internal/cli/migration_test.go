@@ -184,3 +184,17 @@ func TestAutoWorkersFlagValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestCrossJobDedupFlagParsed(t *testing.T) {
+	validMissingID := strings.Repeat("a", 32)
+	for _, arg := range []string{"--cross-job-dedup=true", "--cross-job-dedup=false"} {
+		var out, errOut bytes.Buffer
+		code := migrationCommand(context.Background(), "status", []string{"--job", validMissingID, arg}, strings.NewReader(""), &out, &errOut, func(string) string { return "" }, t.TempDir())
+		if strings.Contains(errOut.String(), "flag provided but not defined") {
+			t.Fatalf("cross-job-dedup flag not recognized: %s", errOut.String())
+		}
+		if code != 1 {
+			t.Fatalf("expected exit code 1 for missing job, got %d: %s", code, errOut.String())
+		}
+	}
+}

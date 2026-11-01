@@ -30,22 +30,50 @@ type Photos interface {
 	Get(context.Context, string) (googlephotos.Media, error)
 }
 type Engine struct {
-	Store             *journal.Store
-	Source            Source
-	Photos            Photos
-	Directory         string
-	Progress          io.Writer
-	Reconcile         bool
-	AutoRetryCreation bool
-	AutoWorkers       bool
-	MaxRetries        int
-	Workers           int
-	BatchSize         int
-	BatchWait         time.Duration
-	onThrottle        func()
-	deferCreate       bool
-	retryMu           sync.Mutex
-	retryWait         func(context.Context, time.Duration) error
+	Store                *journal.Store
+	Source               Source
+	Photos               Photos
+	Directory            string
+	JobsDirectory        string
+	Progress             io.Writer
+	Reconcile            bool
+	AutoRetryCreation    bool
+	AutoWorkers          bool
+	DisableCrossJobDedup bool
+	KeyResolver          KeyResolver
+	MaxRetries           int
+	Workers              int
+	BatchSize            int
+	BatchWait            time.Duration
+	onThrottle           func()
+	deferCreate          bool
+	retryMu              sync.Mutex
+	retryWait            func(context.Context, time.Duration) error
+}
+
+func (e *Engine) loadCompleted(meta *Meta) *CompletedIndex {
+	if e.DisableCrossJobDedup {
+		return nil
+	}
+	jobsDir := e.JobsDirectory
+	if jobsDir == "" && e.Directory != "" {
+		jobsDir = filepath.Dir(e.Directory)
+	}
+	if jobsDir == "" {
+		return nil
+	}
+	resolver := e.KeyResolver
+	if resolver == nil {
+		resolver = func(id string) ([]byte, error) { return journal.Key(id, false) }
+	}
+	idx, err := LoadCompletedIndex(jobsDir, meta.ID, meta.DriveID, meta.GoogleSubject, resolver)
+	if err == nil && idx != nil && idx.Size() > 0 {
+		if e.Progress != nil {
+			fmt.Fprintf(e.Progress, "Cross-job deduplication: loaded %d completed files from previous sessions.\n", idx.Size())
+		}
+		return idx
+	}
+	return nil
 }
 
 func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
@@ -74,6 +102,7 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 	var id int64
 	scanStarted := time.Now()
 	batch := make([]journal.Record, 0, 100)
+	completedIdx := e.loadCompleted(meta)
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
@@ -98,6 +127,11 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 		item.MIME, item.Video, item.Reason = classify(source)
 		if excluded := ExcludedFolder(item.Path, meta.ExcludedFolders); excluded != "" {
 			item.Reason = "excluded by saved folder filter: " + excluded
+		}
+		if item.Reason == "" && completedIdx != nil {
+			if ref, ok := completedIdx.Match(source, item.Path); ok {
+				item.Reason = fmt.Sprintf("already completed in saved job %s", ref.JobID)
+			}
 		}
 		if item.Reason != "" {
 			item.State = "skipped"
@@ -200,6 +234,28 @@ func (e *Engine) Run(ctx context.Context, meta *Meta) error {
 		}
 		if item.State == "needs_review" {
 			fmt.Fprintf(e.Progress, "[%d] %q: needs review; retained staging, continuing other files.\n", id, item.Path)
+		}
+	}
+	completedIdx := e.loadCompleted(meta)
+	if completedIdx != nil {
+		for _, id := range ids {
+			var item Item
+			if err := e.Store.Load(id, &item); err != nil {
+				return err
+			}
+			if item.State == "discovered" || item.State == "downloading" || item.State == "staged" {
+				if ref, ok := completedIdx.Match(item.Source, item.Path); ok {
+					if item.State == "staged" {
+						cachePath := filepath.Join(e.Directory, fmt.Sprintf("stage-%d.bin", id))
+						_ = os.Remove(cachePath)
+					}
+					item.State = "skipped"
+					item.Reason = fmt.Sprintf("already completed in saved job %s", ref.JobID)
+					if err := e.Store.Save(id, item.State, &item); err != nil {
+						return err
+					}
+				}
+			}
 		}
 	}
 	if e.Workers >= 1 {

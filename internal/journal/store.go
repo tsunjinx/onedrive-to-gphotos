@@ -134,6 +134,42 @@ func (s *Store) Load(id int64, value any) error {
 	}
 	return json.Unmarshal(plain, value)
 }
+
+// LoadRecords scans records matching stateFilter (or all id > 0 if stateFilter is "").
+// For each matching record, it decrypts the payload and calls yield with id, state, and plain JSON bytes.
+// If yield returns an error, scanning stops and that error is returned.
+func (s *Store) LoadRecords(stateFilter string, yield func(id int64, state string, plain []byte) error) error {
+	var rows *sql.Rows
+	var err error
+	if stateFilter != "" {
+		rows, err = s.db.Query("SELECT id, state, data FROM records WHERE id>0 AND state=? ORDER BY id", stateFilter)
+	} else {
+		rows, err = s.db.Query("SELECT id, state, data FROM records WHERE id>0 ORDER BY id")
+	}
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var state string
+		var data []byte
+		if err := rows.Scan(&id, &state, &data); err != nil {
+			return err
+		}
+		if len(data) < s.aead.NonceSize() {
+			return errors.New("damaged encrypted job record")
+		}
+		plain, err := s.aead.Open(nil, data[:s.aead.NonceSize()], data[s.aead.NonceSize():], []byte(fmt.Sprintf("%d:%s", id, state)))
+		if err != nil {
+			return errors.New("job record authentication failed; do not discard the journal")
+		}
+		if err := yield(id, state, plain); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
 func (s *Store) IDs() ([]int64, error) {
 	rows, err := s.db.Query("SELECT id FROM records WHERE id>0 ORDER BY id")
 	if err != nil {
