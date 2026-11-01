@@ -25,14 +25,26 @@ Menu options: check connections · new migration · continue job · view progres
 
 ## Setup and sign in
 
+Connect the **Microsoft account containing the OneDrive files** and the **Google account receiving the photos/videos**. Their email addresses may differ. Signing in does not start a transfer.
+
+1. **OneDrive:** this project includes a registered public Microsoft Graph client. Sign in with the source account; no Azure subscription or Microsoft client secret is needed for this existing client. Use menu **7** to choose the drive and inspect its folders before saving the choice. If using your own Microsoft app, follow the [native Graph setup requirements](docs/setup.md#onedrive-native-microsoft-graph).
+2. **Google:** create a project in [Google Cloud Console](https://console.cloud.google.com/), enable **Photos Library API**, and configure OAuth consent. For an app in Testing, add the destination Google account as a test user. Create an OAuth client of type **Desktop app**, download its JSON, and keep it in a private folder outside this repository. See [Google's app setup](https://developers.google.com/photos/overview/configure-your-app).
+3. Open menu **6 — Set up or reconnect accounts**, supply the Google JSON path during setup, and sign in to both accounts. Then use menu **1 — Check both account connections**. Verify the displayed source and destination identities before starting a migration.
+
+If both accounts already pass their connection checks, you can continue your saved migration without recreating the OAuth apps. To switch accounts, explicitly log out of the relevant provider first; existing jobs retain their account bindings.
+
+Equivalent macOS commands (Windows: replace `bash scripts/od2gp.sh` with `.\scripts\od2gp.ps1`):
+
 ```sh
 bash scripts/od2gp.sh setup
 bash scripts/od2gp.sh doctor
 bash scripts/od2gp.sh auth login onedrive
 bash scripts/od2gp.sh auth login google
+bash scripts/od2gp.sh auth check onedrive
+bash scripts/od2gp.sh auth check google
 ```
 
-Run `setup microsoft` once to replace an old Microsoft client ID. See [setup guide](docs/setup.md).
+Run `setup microsoft` once to replace an old Microsoft client ID. Google refresh tokens for external apps in Testing generally expire after seven days with these scopes; reauthorize and continue the same job when needed. Paid Google storage does not change OAuth lifetimes or API quotas. See [setup guide](docs/setup.md).
 
 ## Source inventory
 
