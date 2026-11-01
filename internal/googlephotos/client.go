@@ -78,7 +78,8 @@ func (c Client) request(ctx context.Context, method, address string, headers map
 			return nil, nil, ctx.Err()
 		}
 		var network *net.OpError
-		if errors.As(err, &network) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, context.DeadlineExceeded) {
+		var dns *net.DNSError
+		if errors.As(err, &network) || errors.As(err, &dns) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, nil, &ConnectionError{}
 		}
 		return nil, nil, errors.New("Google Photos request failed; check sign-in and connectivity")
