@@ -16,12 +16,14 @@ func normalizeMenuFolder(folder string) string {
 
 // No default scope change: Enter and 0 both cancel without dispatching a command.
 func (a *menuApp) chooseVaultPolicy() (exclude, proceed bool) {
+	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, a.t("This job scans the drive root. Personal Vault may be inaccessible through the API.\nExcluding it leaves its files uncopied, with unknown count and size. The choice will be saved with this job.\n1) Exclude /Personal Vault and scan the rest\n2) Keep Vault included (the scan may stop if inaccessible)\n0) Cancel without changing the job"))
 	for {
 		answer, err := a.ask("Choose Personal Vault handling", "0")
 		if err != nil {
 			return false, false
 		}
+		clearPromptScreen(a.out)
 		switch answer {
 		case "1":
 			return true, true
@@ -62,6 +64,7 @@ func (a *menuApp) confirmOverlap(candidate menuJob, jobs []menuJob) bool {
 	if len(matches) == 0 && !uncertain {
 		return true
 	}
+	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, a.t("Potential overlap with saved migration history. Jobs do not share completion records; already copied files may be uploaded again.\nVerify the source drive and destination account. Use Continue on the original job to preserve its history."))
 	for i, job := range matches {
 		if i == 5 {
@@ -74,6 +77,7 @@ func (a *menuApp) confirmOverlap(candidate menuJob, jobs []menuJob) bool {
 		fmt.Fprintln(a.out, a.t("Some saved jobs could not be read, so their overlap cannot be checked."))
 	}
 	answer, err := a.ask("Proceed with this separate job despite possible duplicates? Type yes to proceed", "no")
+	clearPromptScreen(a.out)
 	if err != nil || answer != "yes" {
 		fmt.Fprintln(a.out, a.t("No uploads started. Saved migration progress is kept."))
 		return false

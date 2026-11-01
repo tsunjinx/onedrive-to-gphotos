@@ -26,7 +26,7 @@ func TestProgressResumeETAAndReview(t *testing.T) {
 func TestProgressKeepsErrorsAndHidesRoutineLines(t *testing.T) {
 	var out bytes.Buffer
 	d := &transferDisplay{out: &out}
-	d.Write([]byte("[1] Uploaded 30 / 30 bytes\nQueue batch: 3 items\n"))
+	d.Write([]byte("[1] Uploaded 30 / 30 bytes\nQueue batch: 3 items\nTransfer summary: 5s elapsed\n  [1] Resuming verified source download at 10 / 100 bytes\n"))
 	if out.Len() != 0 {
 		t.Fatal(out.String())
 	}

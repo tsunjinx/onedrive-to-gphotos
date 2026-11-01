@@ -353,6 +353,8 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 			return 1
 		}
 	}
+	clearPromptScreen(out)
+	clearPromptScreen(errOut)
 	options, _ := loadMenuOptions(root)
 	progress, closeProgress := startTransferDisplay(store, errOut, *verbose, options.Language)
 	defer closeProgress()

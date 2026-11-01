@@ -14,12 +14,14 @@ func menuText(language, text string) string {
 }
 func (a *menuApp) t(text string) string { return menuText(a.currentOptions().Language, text) }
 func (a *menuApp) configureLanguage() {
+	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, "Language / Ngôn ngữ\n1) English\n2) Tiếng Việt\n0) Back / Quay lại")
 	for {
 		choice, err := a.ask("Choose / Chọn", "0")
 		if err != nil || choice == "0" {
 			return
 		}
+		clearPromptScreen(a.out)
 		opts := a.currentOptions()
 		switch choice {
 		case "1":

@@ -132,6 +132,7 @@ func (a *menuApp) run() int {
 		case "3", "4":
 			job, ok := a.chooseJob(jobs, choice == "3")
 			if ok {
+				clearPromptScreen(a.out)
 				if choice == "3" && job.ResizeCache {
 					a.resizeCache(job)
 					break
@@ -284,6 +285,7 @@ func (a *menuApp) newPlan() {
 }
 
 func (a *menuApp) chooseJob(jobs []menuJob, unfinishedOnly bool) (menuJob, bool) {
+	clearPromptScreen(a.out)
 	var choices []menuJob
 	for _, job := range jobs {
 		if unfinishedOnly && job.Problem == "" && !job.Incomplete {
@@ -333,6 +335,7 @@ func (a *menuApp) chooseJob(jobs []menuJob, unfinishedOnly bool) (menuJob, bool)
 				fmt.Fprintln(a.out, a.t(job.Problem))
 				continue
 			}
+			clearPromptScreen(a.out)
 			return job, true
 		}
 		fmt.Fprintln(a.out, a.t("Choose one of the displayed job numbers."))
@@ -344,6 +347,7 @@ func (a *menuApp) exportReport(jobs []menuJob) {
 	if !ok {
 		return
 	}
+	clearPromptScreen(a.out)
 	var format string
 	for {
 		var err error
@@ -356,6 +360,7 @@ func (a *menuApp) exportReport(jobs []menuJob) {
 		}
 		fmt.Fprintln(a.out, a.t("Enter csv or json."))
 	}
+	clearPromptScreen(a.out)
 	extension := format
 	if format == "json" {
 		extension = "jsonl"
@@ -364,6 +369,7 @@ func (a *menuApp) exportReport(jobs []menuJob) {
 	if err != nil {
 		return
 	}
+	clearPromptScreen(a.out)
 	file, err := os.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if err != nil {
 		if errors.Is(err, os.ErrExist) {
@@ -388,11 +394,13 @@ func (a *menuApp) exportReport(jobs []menuJob) {
 }
 
 func (a *menuApp) accounts() {
+	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, a.t("1) Configure Google client JSON\n2) Sign in to OneDrive\n3) Sign in to Google\n4) Check both connections\n5) Choose OneDrive drive\n0) Back"))
 	choice, err := a.ask("Choose", "4")
 	if err != nil {
 		return
 	}
+	clearPromptScreen(a.out)
 	switch choice {
 	case "1":
 		a.execute([]string{"setup"}, a.out)

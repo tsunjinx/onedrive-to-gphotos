@@ -110,6 +110,7 @@ func (a *menuApp) transferArgs(command, id string) []string {
 	return append(args, "--workers", strconv.Itoa(opts.Workers), "--batch-size", strconv.Itoa(opts.BatchSize), "--retries", strconv.Itoa(opts.Retries))
 }
 func (a *menuApp) startTransfer(args []string) {
+	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, a.t("Transfer settings:"), a.optionsSummary())
 	fmt.Fprintln(a.out, a.t("Ctrl+C saves progress and exits. Open the menu and choose Continue to pick up this job later."))
 	a.execute(args, a.out)
@@ -129,6 +130,7 @@ func (a *menuApp) transferNumber(label string, value, minimum, maximum int) (int
 	}
 }
 func (a *menuApp) configureTransfers() {
+	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, a.t("Transfer speed & options\nCurrent:"), a.optionsSummary())
 	fmt.Fprintln(a.out, a.t("1) Recommended: 3 files, batch 50, 5 retries, wait for videos\n2) Gentle: 1 file at once (try this if requests keep failing)\n3) Faster: 6 files at once\n4) Custom settings\n0) Back"))
 	fmt.Fprintln(a.out, a.t("Settings are remembered for New migration and Continue. Your saved folder and staging limit stay the same."))
@@ -137,6 +139,7 @@ func (a *menuApp) configureTransfers() {
 		if err != nil || choice == "0" {
 			return
 		}
+		clearPromptScreen(a.out)
 		opts := a.currentOptions()
 		switch choice {
 		case "1":
@@ -201,6 +204,7 @@ func (a *menuApp) configureTransfers() {
 }
 
 func (a *menuApp) confirmRecovery(job menuJob) bool {
+	clearPromptScreen(a.out)
 	fmt.Fprintf(a.out, a.t("%d file(s) need creation recovery for this job. Google may already have accepted them before the response was lost.\n"), job.Uncertain)
 	fmt.Fprintln(a.out, a.t("Recovery verifies the retained original files, retries those uncertain items, then continues this same job. Confirmed completed files remain skipped."))
 	for {
@@ -209,6 +213,7 @@ func (a *menuApp) confirmRecovery(job menuJob) bool {
 		if err != nil {
 			return false
 		}
+		clearPromptScreen(a.out)
 		switch choice {
 		case "0":
 			return false
@@ -233,6 +238,7 @@ func menuExcludedFolders(value string) ([]string, error) {
 	return migration.NormalizeExcludedFolders(parts)
 }
 func (a *menuApp) configureSourceFilters() {
+	clearPromptScreen(a.out)
 	fmt.Fprintln(a.out, a.t("Source folder filters (new migrations only). Continue keeps its saved filter."))
 	fmt.Fprintln(a.out, a.t("Enter drive-root folders separated by |, e.g. /Documents/Projects | /Apps. Type - to clear, or b to cancel."))
 	fmt.Fprintln(a.out, a.t("Files are still scanned and shown as skipped in reports. No folders are excluded automatically."))
@@ -242,6 +248,7 @@ func (a *menuApp) configureSourceFilters() {
 		if err != nil || strings.EqualFold(answer, "b") {
 			return
 		}
+		clearPromptScreen(a.out)
 		if answer == "-" {
 			answer = ""
 		}

@@ -40,11 +40,12 @@ func startTransferDisplay(store *journal.Store, out io.Writer, verbose bool, lan
 		restore()
 		return out, func() {}
 	}
+	clearConsole(file)
 	d := &transferDisplay{columns: func() int { return progressColumns(file) }, language: language, out: out, store: store, started: time.Now(), baseline: sentCount(counts), stop: make(chan struct{}), done: make(chan struct{})}
 	if language == "vi" {
-		fmt.Fprintln(out, "Tiến độ gửi tệp; ETA chưa gồm thời gian Google xử lý video.")
+		fmt.Fprintln(out, "Tiến độ gửi tệp (Ctrl+C để tạm dừng và lưu tiến độ):")
 	} else {
-		fmt.Fprintln(out, "File transfer progress; ETA excludes Google video processing.")
+		fmt.Fprintln(out, "File transfer progress (Ctrl+C saves progress and exits):")
 	}
 	d.render(counts, time.Now())
 	go func() {
@@ -133,9 +134,9 @@ func (d *transferDisplay) Write(p []byte) (int, error) {
 	defer d.mu.Unlock()
 	for _, line := range strings.Split(strings.TrimSpace(string(p)), "\n") {
 		line = strings.TrimSpace(line)
-		routine := strings.HasPrefix(line, "Queue batch:") || strings.HasPrefix(line, "Create batch:") || strings.HasPrefix(line, "Transfers:") || strings.HasPrefix(line, "Batch creation:")
+		routine := strings.HasPrefix(line, "Queue batch:") || strings.HasPrefix(line, "Create batch:") || strings.HasPrefix(line, "Transfers:") || strings.HasPrefix(line, "Batch creation:") || strings.HasPrefix(line, "Transfer summary:") || strings.HasPrefix(line, "Scanned ")
 		if strings.HasPrefix(line, "[") {
-			routine = routine || strings.Contains(line, "Uploaded ") || strings.Contains(line, "Upload session and bytes:") || strings.Contains(line, "Download and version checks:") || strings.HasSuffix(line, ": discovered") || strings.HasSuffix(line, ": uploading") || strings.HasSuffix(line, ": staged") || strings.HasSuffix(line, ": uploaded") || strings.HasSuffix(line, ": downloading") || strings.HasSuffix(line, ": processing") || strings.HasSuffix(line, ": created")
+			routine = routine || strings.Contains(line, "Uploaded ") || strings.Contains(line, "Upload session and bytes:") || strings.Contains(line, "Download and version checks:") || strings.Contains(line, "Resuming verified source download") || strings.Contains(line, "Source ignored the range") || strings.HasSuffix(line, ": discovered") || strings.HasSuffix(line, ": uploading") || strings.HasSuffix(line, ": staged") || strings.HasSuffix(line, ": uploaded") || strings.HasSuffix(line, ": downloading") || strings.HasSuffix(line, ": processing") || strings.HasSuffix(line, ": created")
 		}
 		if line != "" && !routine {
 			if _, err := fmt.Fprintf(d.out, "\r\x1b[2K%s\n", line); err != nil {
