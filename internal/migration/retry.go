@@ -78,7 +78,13 @@ func (e *Engine) awaitRetry(ctx context.Context, meta *Meta) error {
 func (e *Engine) scheduleRetry(ctx context.Context, meta *Meta, api *googlephotos.APIError, attempt int, uncertain bool, original error) error {
 	e.retryMu.Lock()
 	defer e.retryMu.Unlock()
-	delay := min(30*time.Second*time.Duration(1<<attempt), 5*time.Minute)
+	base := 30 * time.Second
+	maxDelay := 5 * time.Minute
+	if api == nil {
+		base = 2 * time.Second
+		maxDelay = 30 * time.Second
+	}
+	delay := min(base*time.Duration(1<<attempt), maxDelay)
 	delay += time.Duration(rand.Int64N(int64(time.Second)))
 	until := time.Now().Add(delay).UTC()
 	if api != nil && api.RetryAt.After(until) {
