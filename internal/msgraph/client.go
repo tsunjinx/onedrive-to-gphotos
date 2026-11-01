@@ -22,6 +22,7 @@ const endpoint = "https://graph.microsoft.com/v1.0"
 const fields = "id,name,size,file,folder,package,remoteItem,eTag,cTag,lastModifiedDateTime"
 
 type Client struct {
+	scanOutput           io.Writer
 	HTTP                 *http.Client
 	Drive                string
 	ExcludePersonalVault bool
@@ -107,6 +108,9 @@ func (c Client) request(ctx context.Context, address string) (*http.Response, er
 			return resp, nil
 		}
 		delay := graphRetryDelay(resp.Header.Get("Retry-After"), attempt, time.Now())
+		if c.scanOutput != nil {
+			fmt.Fprintf(c.scanOutput, "Graph HTTP %d; retry wait %s (attempt %d).\n", resp.StatusCode, delay.Round(time.Second), attempt+1)
+		}
 		resp.Body.Close()
 		client.CloseIdleConnections()
 		if err := c.pauseRequestRetry(ctx, delay, attempt); err != nil {

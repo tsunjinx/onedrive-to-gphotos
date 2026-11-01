@@ -335,7 +335,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	// counts and asking for first-upload approval, including on direct resume.
 	resumedInventory := !meta.InventoryComplete
 	if resumedInventory {
-		fmt.Fprintln(errOut, "Restarting incomplete inventory for the saved job; no uploads until the scan completes.")
+		fmt.Fprintln(errOut, "Continuing incomplete inventory; saved delta pages are reused when available. No uploads until the scan completes.")
 		if err := engine.Discover(ctx, &meta); err != nil {
 			return fail(err)
 		}

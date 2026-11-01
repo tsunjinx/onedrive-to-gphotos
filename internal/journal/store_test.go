@@ -2,6 +2,7 @@ package journal
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -106,5 +107,33 @@ func TestSaveUpdatesIsAtomicAndEncrypted(t *testing.T) {
 	}
 	if bytes.Contains(data, []byte("private-upload-token")) {
 		t.Fatal("stored plaintext token")
+	}
+}
+
+func TestScanPageAndCursorCommitAtomically(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "scan.db"), bytes.Repeat([]byte{7}, 32), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.SaveScanPage(map[string]string{"next": "private-cursor"}, map[string]json.RawMessage{"item": json.RawMessage(`{"name":"private-name"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SaveScanPage(make(chan int), map[string]json.RawMessage{"item": json.RawMessage(`{"name":"changed"}`)}); err == nil {
+		t.Fatal("expected encoding failure")
+	}
+	var value map[string]string
+	if err = s.LoadScan("item", &value); err != nil || value["name"] != "private-name" {
+		t.Fatalf("partial page committed: %v %+v", err, value)
+	}
+	if err = s.LoadScanState(&value); err != nil || value["next"] != "private-cursor" {
+		t.Fatalf("cursor changed: %v %+v", err, value)
+	}
+	var ciphertext []byte
+	if err = s.db.QueryRow("SELECT data FROM scan WHERE id='state'").Scan(&ciphertext); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(ciphertext, []byte("private-cursor")) {
+		t.Fatal("cursor saved in plaintext")
 	}
 }

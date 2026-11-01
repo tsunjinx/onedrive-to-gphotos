@@ -54,6 +54,10 @@ bash scripts/od2gp.sh source scan /Pictures
 
 Reads metadata and prints totals without uploading.
 
+Saved **Graph migrations of `/`** use delta pages instead of visiting every folder separately. Each page and its continuation are encrypted and committed together. Continue reuses saved pages after interruption; uploads remain blocked until the complete inventory is validated. The terminal shows page timings and a 10-second heartbeat while waiting for Graph, including retry pauses.
+
+Old incomplete jobs need one fresh scan because their previous file counter was not a traversal checkpoint. Folder-only jobs, rclone jobs and standalone `source scan` retain the children/listing scanner. See [scan recovery and update instructions](docs/runbook.md#graph-inventory-prefetch).
+
 ## Migration
 
 ```sh

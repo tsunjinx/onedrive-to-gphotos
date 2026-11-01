@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -44,6 +45,12 @@ type Engine struct {
 }
 
 func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
+	originalProgress := e.Progress
+	if e.Progress == nil {
+		e.Progress = io.Discard
+	}
+	e.Progress = &lockedProgress{out: e.Progress}
+	defer func() { e.Progress = originalProgress }()
 	e.bindSourceRetry(meta)
 	// Discovery may be restarted only before any transfer has been allowed.
 	if meta.InventoryComplete {
@@ -73,7 +80,7 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 		batch = batch[:0]
 		return nil
 	}
-	err := e.Source.Walk(ctx, meta.Folder, func(source onedrive.Item) error {
+	visit := func(source onedrive.Item) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -99,7 +106,24 @@ func (e *Engine) Discover(ctx context.Context, meta *Meta) error {
 			fmt.Fprintf(e.Progress, "Scanned %d source files... elapsed %s (%.0f files/min)\n", id, time.Since(scanStarted).Round(time.Second), float64(id)/time.Since(scanStarted).Minutes())
 		}
 		return nil
-	})
+	}
+	var err error
+	if source, ok := e.Source.(interface {
+		WalkCheckpoint(context.Context, string, *journal.Store, string, io.Writer, func(onedrive.Item) error) error
+	}); ok {
+		scope := *meta
+		scope.RetryAt = time.Time{}
+		scope.CacheBytes = 0 // Staging capacity does not change the source inventory.
+		encoded, encodeErr := json.Marshal(scope)
+		if encodeErr != nil {
+			return encodeErr
+		}
+		binding := fmt.Sprintf("delta-v1:%x", sha256.Sum256(encoded))
+		err = source.WalkCheckpoint(ctx, meta.Folder, e.Store, binding, e.Progress, visit)
+	} else {
+		err = e.Source.Walk(ctx, meta.Folder, visit)
+	}
+
 	if err != nil {
 		if saveErr := e.persistSourcePause(meta, err); saveErr != nil {
 			return saveErr

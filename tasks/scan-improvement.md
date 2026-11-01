@@ -1,6 +1,6 @@
 # Faster full-drive inventory
 
-Status: researched proposal against 719cd07; delta inventory is not implemented yet. User reports approximately 700 files in 15 minutes on the production Windows source account. This measures observed file-count throughput, not API request latency or a confirmed throttling rate.
+Status: delta inventory and atomic page checkpoints implemented for saved root Graph jobs; local recovery tests pass. Native Windows CI and live throughput validation are tracked separately. User reports approximately 700 files in 15 minutes on the production Windows source account. This measures observed file-count throughput, not API request latency or a confirmed throttling rate.
 
 ## Findings in current code
 
@@ -44,3 +44,11 @@ Introduce an explicit exclusion mode that avoids traversing excluded subtrees in
 - Preserve provider Retry-After pauses, cancellation and bounded memory. Keep raw inventory on disk for large libraries.
 - Same final eligible/skipped scope on a stable fixture; record request count, wall time and peak memory for children versus delta.
 - Run native Windows tests. Then measure a representative live read-only trial before selecting delta by default for the main account. No credential or migration changes are part of this research.
+
+## Implementation evidence
+
+- Root saved Graph jobs use delta; narrow folders, browsing and standalone diagnostics retain children enumeration.
+- Raw pages are encrypted by stable-ID hash in SQLite; page entries and continuation commit atomically. Incomplete item records can be rebuilt from saved pages without network replay.
+- Tests cover reopen/resume, transaction rollback, duplicate latest state, late parents, missing metadata, hierarchy cycles, root versus nested Vault, empty intermediate pages, cancellation, HTTP 410 and hostile continuations. Engine integration verifies the incomplete-upload gate and resizing staging without invalidating the scan.
+- A stable fixture with 40 folders and one photo each returns identical files: 41 children requests versus one delta request. This is request-count evidence, not a live speed multiplier.
+- Diagnostics currently include page entry count/duration, HTTP retry status/delay and a 10-second Graph-wait heartbeat. Fine-grained DB timing, peak-memory benchmarks, explicit subtree pruning, a real process-kill checkpoint test and representative live throughput remain follow-up gates; they are not claimed complete.
