@@ -156,6 +156,9 @@ func (a *menuApp) run() int {
 					if !job.Started && !a.confirmOverlap(job, jobs) {
 						break
 					}
+					if job.NeedsReview > 0 {
+						fmt.Fprintf(a.out, "%d files need review; continuing other files.\n", job.NeedsReview)
+					}
 					if job.Uncertain > 0 {
 						if !a.confirmRecovery(job) {
 							break
@@ -290,6 +293,9 @@ func (a *menuApp) chooseJob(jobs []menuJob, unfinishedOnly bool) (menuJob, bool)
 		label := fmt.Sprintf(a.t("%q — %d/%d eligible completed, %d processing, %d skipped — %s (%s)"), "/"+job.Folder, job.Completed, job.Total-job.Skipped, job.Processing, job.Skipped, job.Created.Local().Format("2006-01-02 15:04"), job.ID[:8])
 		if !job.InventoryComplete && !job.Started {
 			label += a.t(" — inventory incomplete")
+		}
+		if job.NeedsReview > 0 {
+			label += fmt.Sprintf(" — needs review (%d)", job.NeedsReview)
 		}
 		if job.Uncertain > 0 {
 			label += fmt.Sprintf(a.t(" — needs recovery (%d)"), job.Uncertain)

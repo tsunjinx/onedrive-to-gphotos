@@ -112,6 +112,9 @@ func (e *Engine) commitBatch(ctx context.Context, meta *Meta, tasks []transferTa
 					item.State = "uploaded"
 					item.Reason = rejected.Error()
 					switch rejected.Code {
+					case 6:
+						item.State = "needs_review"
+						fmt.Fprintf(e.Progress, "[%d] %q: Google ALREADY_EXISTS; needs review, staging retained.\n", tasks[i].id, item.Path)
 					case 8, 13, 14:
 						retry = append(retry, tasks[i])
 						retryError = rejected

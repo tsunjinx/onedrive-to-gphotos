@@ -288,3 +288,62 @@ func TestLostBatchReconciliationVerifiesOriginalStaging(t *testing.T) {
 		t.Fatalf("reconciliation incomplete: %d", p.created)
 	}
 }
+
+func TestAlreadyExistsRetainsCacheAndContinueProcessesOtherFiles(t *testing.T) {
+	e, meta, p := batchFixture(t, 6)
+	p.response = func(items []googlephotos.NewItem) ([]googlephotos.CreateResult, error) {
+		results := make([]googlephotos.CreateResult, len(items))
+		for i := range results {
+			results[i].Media.ID = fmt.Sprint(i + 1)
+		}
+		results[0] = googlephotos.CreateResult{Err: &googlephotos.ItemError{Code: 6}}
+		return results, nil
+	}
+	if err := e.Run(context.Background(), meta); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ := e.Store.IDs()
+	reviews, completed := 0, 0
+	for _, id := range ids {
+		var item Item
+		e.Store.Load(id, &item)
+		if item.State == "needs_review" {
+			reviews++
+			if _, err := os.Stat(filepath.Join(e.Directory, fmt.Sprintf("stage-%d.bin", id))); err != nil {
+				t.Fatal("lost review staging", err)
+			}
+		}
+		if item.State == "completed" {
+			completed++
+		}
+	}
+	if reviews != 1 || completed != 5 {
+		t.Fatalf("review=%d complete=%d", reviews, completed)
+	}
+	calls := len(p.batches)
+	if err := e.Run(context.Background(), meta); err != nil || len(p.batches) != calls {
+		t.Fatalf("retried rejection: %v", err)
+	}
+}
+func TestLegacyAlreadyExistsIsNotResent(t *testing.T) {
+	e, meta, p := batchFixture(t, 6)
+	var item Item
+	e.Store.Load(1, &item)
+	item.State = "uploaded"
+	item.Reason = (&googlephotos.ItemError{Code: 6}).Error()
+	e.Store.Save(1, item.State, &item)
+	if err := e.Run(context.Background(), meta); err != nil {
+		t.Fatal(err)
+	}
+	e.Store.Load(1, &item)
+	if item.State != "needs_review" {
+		t.Fatal(item.State)
+	}
+	count := 0
+	for _, b := range p.batches {
+		count += len(b)
+	}
+	if count != 5 {
+		t.Fatalf("resent legacy rejection: %d", count)
+	}
+}

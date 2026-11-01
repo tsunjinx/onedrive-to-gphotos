@@ -17,6 +17,7 @@ type menuJob struct {
 	ID, Folder, Problem                     string
 	Created                                 time.Time
 	Total, Completed, Processing, Skipped   int
+	NeedsReview                             int
 	Uncertain                               int
 	Incomplete, Started                     bool
 	InventoryComplete, ExcludePersonalVault bool
@@ -99,6 +100,9 @@ func loadMenuJob(file, id string) (menuJob, error) {
 			job.Completed++
 		case "skipped":
 			job.Skipped++
+		case "needs_review":
+			job.NeedsReview++
+			job.Incomplete = true
 		case "processing_failed":
 		default:
 			job.Incomplete = true

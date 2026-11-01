@@ -104,7 +104,7 @@ func (e *Engine) runParallel(ctx context.Context, meta *Meta, ids []int64) error
 			}
 			continue
 		}
-		if item.State == "completed" || item.State == "skipped" || item.State == "processing_failed" {
+		if item.State == "completed" || item.State == "skipped" || item.State == "processing_failed" || item.State == "needs_review" {
 			continue
 		}
 		required := staging.Required(item.Source.Size)

@@ -182,6 +182,22 @@ func (e *Engine) Run(ctx context.Context, meta *Meta) error {
 	if err != nil {
 		return err
 	}
+	// Upgrade the explicit rejection saved by older versions without resending it.
+	for _, id := range ids {
+		var item Item
+		if err := e.Store.Load(id, &item); err != nil {
+			return err
+		}
+		if item.State == "uploaded" && item.Reason == (&googlephotos.ItemError{Code: 6}).Error() {
+			item.State = "needs_review"
+			if err := e.Store.Save(id, item.State, &item); err != nil {
+				return err
+			}
+		}
+		if item.State == "needs_review" {
+			fmt.Fprintf(e.Progress, "[%d] %q: needs review; retained staging, continuing other files.\n", id, item.Path)
+		}
+	}
 	if e.Workers >= 1 {
 		if err := e.runParallel(ctx, meta, ids); err != nil {
 			return err
@@ -209,7 +225,7 @@ func (e *Engine) Run(ctx context.Context, meta *Meta) error {
 		if err := e.Store.Load(id, &item); err != nil {
 			return err
 		}
-		if item.State == "completed" || item.State == "skipped" || item.State == "processing_failed" {
+		if item.State == "completed" || item.State == "skipped" || item.State == "processing_failed" || item.State == "needs_review" {
 			continue
 		}
 		fmt.Fprintf(e.Progress, "[%d/%d] %q: %s\n", id, len(ids), item.Path, item.State)
@@ -384,6 +400,11 @@ func (e *Engine) transfer(ctx context.Context, meta *Meta, id int64, item *Item)
 		if err != nil {
 			var api *googlephotos.APIError
 			var rejected *googlephotos.ItemError
+			if errors.As(err, &rejected) && rejected.Code == 6 {
+				item.State = "needs_review"
+				item.Reason = rejected.Error()
+				return e.Store.Save(id, item.State, item)
+			}
 			if errors.As(err, &rejected) || errors.As(err, &api) && (api.Code == 401 || api.Code == 403 || api.Code == 429) {
 				item.State = "uploaded"
 				if saveErr := save(); saveErr != nil {

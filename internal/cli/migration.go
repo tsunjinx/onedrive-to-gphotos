@@ -375,6 +375,7 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 	}
 	pending := false
 	failed := false
+	review := 0
 	for _, id := range ids {
 		var item migration.Item
 		if err := store.Load(id, &item); err != nil {
@@ -383,15 +384,21 @@ func migrationCommand(ctx context.Context, command string, args []string, input 
 		if item.State == "processing" {
 			pending = true
 		}
+		if item.State == "needs_review" {
+			review++
+		}
 		if item.State == "processing_failed" {
 			failed = true
 		}
+	}
+	if review > 0 {
+		fmt.Fprintf(out, "%d files need review (Google ALREADY_EXISTS). Other transfers have finished; staging retained. Export the report.\n", review)
 	}
 	if pending {
 		fmt.Fprintln(out, "Google is still processing videos. Resume this job later to check readiness.")
 		return 3
 	}
-	if failed {
+	if failed || review > 0 {
 		return 4
 	}
 	fmt.Fprintln(out, "Job finished. Review the report for any skipped files.")
@@ -439,6 +446,7 @@ func migrationSummary(store *journal.Store, meta migration.Meta, out io.Writer) 
 			}
 		}
 	}
+	fmt.Fprintf(out, "Needs review: %d (not confirmed completed; staging retained)\n", counts["needs_review"])
 	fmt.Fprintf(out, "Job: %s\nSource: OneDrive /%s\nFiles: %d; eligible bytes: %d\nCompleted: %d; processing: %d; skipped: %d; processing failures: %d\nCache cap: %.1f GiB; largest staged file: %.2f GiB\nInventory complete: %t\n", meta.ID, meta.Folder, len(ids), bytes, counts["completed"], counts["processing"], counts["skipped"], counts["processing_failed"], float64(meta.CacheBytes)/(1<<30), float64(largest)/(1<<30), meta.InventoryComplete)
 	fmt.Fprintf(out, "Source backend: %s\n", migrationBackend(meta))
 	if meta.ExcludePersonalVault {
