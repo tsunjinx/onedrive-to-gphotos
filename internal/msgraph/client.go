@@ -301,7 +301,15 @@ func (c Client) stat(ctx context.Context, name, selectedFields string) (onedrive
 func (c Client) Walk(ctx context.Context, folder string, visit func(onedrive.Item) error) error {
 	return c.List(ctx, folder, true, visit)
 }
+
+// WalkTree emits folders as well as ordinary files for tree-preserving migration.
+func (c Client) WalkTree(ctx context.Context, folder string, visit func(onedrive.Item) error) error {
+	return c.list(ctx, folder, true, true, visit)
+}
 func (c Client) List(ctx context.Context, folder string, recursive bool, visit func(onedrive.Item) error) error {
+	return c.list(ctx, folder, recursive, false, visit)
+}
+func (c Client) list(ctx context.Context, folder string, recursive, folders bool, visit func(onedrive.Item) error) error {
 	folder = strings.Trim(folder, "/")
 	if c.ExcludePersonalVault && (folder == "Personal Vault" || strings.HasPrefix(folder, "Personal Vault/")) {
 		return errors.New("Personal Vault is excluded from this job")
@@ -396,9 +404,12 @@ func (c Client) List(ctx context.Context, folder string, recursive bool, visit f
 				if r.File != nil && r.ETag == "" && r.CTag == "" {
 					return errors.New("Graph omitted file version metadata; scan is incomplete")
 				}
+				if folders && r.Package != nil {
+					return fmt.Errorf("unsupported OneDrive package at %q; inventory incomplete", name)
+				}
 				item := r.item(name)
 				if item.IsDir {
-					if !recursive {
+					if !recursive || folders {
 						if err := visit(item); err != nil {
 							return err
 						}
