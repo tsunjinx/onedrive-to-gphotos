@@ -283,7 +283,7 @@ Implemented idle-based downloads, authenticated source-range resume, bounded sou
 
 ## 2026-11-02 — Planned feature: OneDrive → Google Drive
 
-Status: design agreed in conversation; not implemented. This section specifies the new Google Drive destination only. Existing Google Photos plans, jobs and acceptance records above remain intact. No implementation or publication is authorized by this documentation update alone.
+Status: implementation authorized and added on 2026-11-02. Local automated tests cover the Drive client, account isolation, folder-aware inventory, durable IDs, resumable transfer, retry beyond the old budget, final tree reconciliation and Auto-workers. Source and destination account/cloud trials, native desktop consent and actual power-loss acceptance remain pending on the other machine designated by the owner. Existing Google Photos jobs and historical acceptance records remain intact.
 
 ### Agreed scope and completion contract
 
@@ -370,3 +370,17 @@ References (checked 2026-11-02):
 - https://developers.google.com/identity/protocols/oauth2#expiration
 - https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app
 - https://learn.microsoft.com/en-us/graph/api/resources/package?view=graph-rest-1.0
+
+
+### Google Drive implementation evidence — 2026-11-02
+
+- New `internal/googledrive` client, isolated `gdrive` OAuth/keyring entry, `internal/drivemigration` journal/model/scheduler, root Graph delta checkpoint with folder emission and native Graph folder traversal.
+- Main menu 11 opens the bilingual Drive menu. Guided setup persists console steps and imports Desktop JSON; actual identity/Drive checks are separate from user-acknowledged console configuration.
+- Dedicated `drive-jobs` journals cannot be mistaken for Photos jobs. Source/destination clients/accounts, saved source drive, destination root parent ID and target IDs are bound before mutation.
+- Fault tests cover lost creation/final-upload responses, retries beyond five failures, expired sessions, reopened journals, cache cleanup, independent work after a folder failure, one-file staging with eight workers, source/destination tree changes, and tuner cooldown/rollback. Reports omit resumable session URLs.
+- The legacy Photos cross-job index now requires source identity, destination media ID and version metadata; missing drive/subject bindings cannot match. Skipped partial staging is removed after the saved skip decision and on later resumes.
+- Auto-workers defaults to auto for Drive only; starts at 3, stays within 1–8, measures acknowledged chunk bytes/request latency over 20-second windows and backs off under errors or staging pressure. Photos tuning remains separate. Numerical thresholds have synthetic/fault-test evidence, not a live throughput-optimality claim.
+- Root inventory resumes saved delta pages. Selected-folder inventory restarts an incomplete scan, without starting uploads until complete.
+- Final verification checks app-accessible destination membership and source tree freshness. `sha256` and `metadata_only` are reported distinctly; the latter is not a byte-identity claim. A file modified/moved at the source requires explicit resolution/replanning rather than silently changing the saved migration.
+- Known first-release scope: app-created destination root in personal My Drive; no arbitrary existing-folder Picker, Shared Drive destination, OneNote export, permission/history migration, continuous sync, or boot auto-start. Inaccessible/unsupported source content blocks inventory; only Vault has an explicit exclusion UI.
+- Owner stated live trials will execute on a different machine. Keep Gate A, Gate C runtime evidence, GD12 and full-rollout approval open until that machine supplies results; CI is not a substitute for actual OAuth/large-transfer/power-loss validation.

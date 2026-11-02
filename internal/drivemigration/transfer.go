@@ -6,13 +6,16 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"od2gp/internal/googledrive"
+	"od2gp/internal/onedrive"
 	"od2gp/internal/staging"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func (e *Engine) stagePath(id int64) string {
@@ -112,11 +115,23 @@ func (e *Engine) transfer(ctx context.Context, id int64, n *Node) error {
 		if err != nil {
 			return err
 		}
+		written := &countWriter{Writer: w}
 		if offset < n.Source.Size {
-			if err = e.Source.Read(ctx, sourcePath, offset, w); err != nil {
+			if err = e.Source.Read(ctx, sourcePath, offset, written); err != nil {
 				w.Abort()
+				var restart interface{ RestartDownload() bool }
+				if errors.As(err, &restart) && restart.RestartDownload() {
+					if removeErr := os.Remove(e.stagePath(id)); removeErr != nil {
+						return removeErr
+					}
+					return &sourceInterrupted{}
+				}
 				return err
 			}
+		}
+		if written.n != n.Source.Size-offset {
+			w.Abort()
+			return &sourceInterrupted{}
 		}
 		n.Hash, err = w.Finish()
 		if err != nil {
@@ -181,10 +196,14 @@ func (e *Engine) transfer(ctx context.Context, id int64, n *Node) error {
 		if _, err = reader.ReadAt(buffer[:length], n.Offset); err != nil {
 			return err
 		}
+		started := time.Now()
 		next, final, err := e.Destination.Chunk(ctx, n.Session, n.Offset, n.Source.Size, buffer[:length])
 		if err != nil {
 			return err
 		}
+		e.latency.Add(int64(time.Since(started)))
+		e.requests.Add(1)
+		e.sent.Add(length)
 		if final != nil {
 			if err = e.verify(n, *final); err != nil {
 				return err
@@ -249,5 +268,86 @@ func (e *Engine) Verify(ctx context.Context) error {
 			}
 		}
 	}
+
+	nodes, err := Load(e.Store)
+	if err != nil {
+		return err
+	}
+	expected := map[string]map[string]bool{}
+	for _, n := range nodes {
+		if n.State == "skipped" || n.Source.Path == "" {
+			continue
+		}
+		if expected[n.ParentTarget] == nil {
+			expected[n.ParentTarget] = map[string]bool{}
+		}
+		expected[n.ParentTarget][n.TargetID] = true
+	}
+	lister, ok := e.Destination.(interface {
+		Children(context.Context, string) ([]googledrive.File, error)
+	})
+	if !ok {
+		return errors.New("destination cannot verify folder membership")
+	}
+	for _, n := range nodes {
+		if !n.Source.IsDir || n.State != "completed" {
+			continue
+		}
+		children, err := lister.Children(ctx, n.TargetID)
+		if err != nil {
+			return err
+		}
+		seen := map[string]bool{}
+		for _, child := range children {
+			if !expected[n.TargetID][child.ID] || seen[child.ID] {
+				return fmt.Errorf("unexpected or repeated destination item in %q", n.Source.Path)
+			}
+			seen[child.ID] = true
+		}
+		if len(seen) != len(expected[n.TargetID]) {
+			return fmt.Errorf("destination folder membership changed: %q", n.Source.Path)
+		}
+	}
+	seen := map[string]bool{}
+	err = e.Source.WalkTree(ctx, e.Meta.Folder, func(source onedrive.Item) error {
+		if !source.IsDir && source.Size == 0 {
+			return nil
+		}
+		n, ok := nodes[source.Path]
+		if !ok || n.State != "completed" || source.IsDir != n.Source.IsDir || source.Name != n.Source.Name || (!source.IsDir && !Same(source, n.Source)) {
+			return fmt.Errorf("source tree changed at %q", source.Path)
+		}
+		if seen[source.Path] {
+			return errors.New("source repeated an item during verification")
+		}
+		seen[source.Path] = true
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	for p, n := range nodes {
+		if p != "" && n.State != "skipped" && !seen[p] {
+			return fmt.Errorf("source item disappeared: %q", p)
+		}
+	}
 	return nil
 }
+
+type countWriter struct {
+	io.Writer
+	n int64
+}
+
+func (w *countWriter) Write(b []byte) (int, error) {
+	n, e := w.Writer.Write(b)
+	w.n += int64(n)
+	return n, e
+}
+
+type sourceInterrupted struct{}
+
+func (*sourceInterrupted) Error() string {
+	return "source download incomplete; retrying retained staging"
+}
+func (*sourceInterrupted) SourceTemporary() bool { return true }

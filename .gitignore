@@ -37,3 +37,10 @@ config.json
 /reports/
 stage-*.bin
 *.log
+
+# Exported Drive/Photos reports and Drive runtime state
+/migration*.csv
+/migration*.jsonl
+/drive-*.csv
+/drive-*.json
+/drive-jobs/

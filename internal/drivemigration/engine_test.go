@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"od2gp/internal/googledrive"
 	"od2gp/internal/journal"
 	"od2gp/internal/onedrive"
+	"od2gp/internal/staging"
 	"os"
 	"path/filepath"
 	"sync"
@@ -114,7 +116,7 @@ func engineFixture(t *testing.T) (*Engine, *driveFake) {
 	}
 	t.Cleanup(func() { s.Close() })
 	src := fullSource{items: []onedrive.Item{{ID: "dir", Name: "Rỗng", Path: "Rỗng", IsDir: true}, {ID: "a", Name: "a.txt", Path: "a.txt", Size: 3, ModTime: "2026-01-01T00:00:00Z"}, {ID: "zero", Name: "zero", Path: "Rỗng/zero", Size: 0, ModTime: "2026-01-01T00:00:00Z"}}, data: map[string][]byte{"a.txt": []byte("abc")}}
-	m := &Meta{Kind: Kind, ID: "job", RootName: "Backup", CacheBytes: 1 << 20}
+	m := &Meta{Kind: Kind, RootParentID: "root", ID: "job", RootName: "Backup", CacheBytes: 1 << 20}
 	if e = Discover(context.Background(), src, s, m, nil); e != nil {
 		t.Fatal(e)
 	}
@@ -209,5 +211,167 @@ func TestWorkerTunerCooldownAndRollback(t *testing.T) {
 	}
 	if n, _ := tuner.Observe(now.Add(43*time.Second), 0, false, true); n != 2 {
 		t.Fatal("did not back off")
+	}
+}
+
+func (d *driveFake) Children(_ context.Context, parent string) ([]googledrive.File, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var out []googledrive.File
+	for _, f := range d.files {
+		if len(f.Parents) == 1 && f.Parents[0] == parent {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+func TestUnknownStagingAndSourceTreeChangesAreVisible(t *testing.T) {
+	e, d := engineFixture(t)
+	if err := e.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	src := e.Source.(fullSource)
+	src.items = append(src.items, onedrive.Item{ID: "new", Name: "new-folder", Path: "new-folder", IsDir: true})
+	e.Source = src
+	if e.Verify(context.Background()) == nil {
+		t.Fatal("ignored new source folder")
+	}
+	e.Source = fullSource{items: src.items[:len(src.items)-1], data: src.data}
+	d.files["extra"] = googledrive.File{ID: "extra", Name: "extra", Parents: []string{"1"}}
+	if e.Verify(context.Background()) == nil {
+		t.Fatal("ignored unexpected destination item")
+	}
+}
+
+type deniedFolder struct{ *driveFake }
+
+func (d deniedFolder) CreateFolder(ctx context.Context, f googledrive.File) (googledrive.File, error) {
+	if f.Name == "Rỗng" {
+		return googledrive.File{}, &googledrive.Error{Code: 403}
+	}
+	return d.driveFake.CreateFolder(ctx, f)
+}
+func TestPermanentFolderFailureDoesNotCancelIndependentFile(t *testing.T) {
+	e, d := engineFixture(t)
+	e.Destination = deniedFolder{d}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err == nil {
+		t.Fatal("ignored blocked folder")
+	}
+	nodes, err := Load(e.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodes["a.txt"].State != "completed" || nodes["Rỗng"].State != "blocked" {
+		t.Fatalf("independent work lost: %+v", nodes)
+	}
+}
+func TestStagingCapBoundsTransfersWithEightWorkers(t *testing.T) {
+	e, _ := engineFixture(t)
+	src := e.Source.(fullSource)
+	for i := 0; i < 12; i++ {
+		p := fmt.Sprintf("item-%d", i)
+		src.items = append(src.items, onedrive.Item{ID: p, Name: p, Path: p, Size: 3, ModTime: "2026-01-01T00:00:00Z"})
+		src.data[p] = []byte("abc")
+	}
+	e.Source = src
+	e.Meta.InventoryComplete = false
+	e.Meta.CacheBytes = 31
+	if err := Discover(context.Background(), src, e.Store, e.Meta, nil); err != nil {
+		t.Fatal(err)
+	}
+	e.Workers = 8
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Verify(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type expiredSession struct{ *driveFake }
+
+func (d expiredSession) Query(context.Context, string, int64) (int64, *googledrive.File, error) {
+	return 0, nil, &googledrive.Error{Code: 410}
+}
+func TestExpiredSessionKeepsDestinationIdentity(t *testing.T) {
+	e, d := engineFixture(t)
+	nodes, err := Load(e.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := nodes["a.txt"]
+	n.State = "uploading"
+	n.TargetID = "reserved"
+	n.ParentTarget = "root"
+	n.Session = "expired"
+	w, _, err := staging.Resume(context.Background(), e.stagePath(3), e.stageKey(3), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = w.Write([]byte("abc")); err != nil {
+		t.Fatal(err)
+	}
+	n.Hash, err = w.Finish()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Destination = expiredSession{d}
+	if err = e.transfer(context.Background(), 3, &n); err != nil {
+		t.Fatal(err)
+	}
+	if n.TargetID != "reserved" || d.next != 0 || n.State != "completed" {
+		t.Fatal("expired session changed identity")
+	}
+}
+
+type cancelAfterFolder struct {
+	*driveFake
+	cancel context.CancelFunc
+}
+
+func (d cancelAfterFolder) CreateFolder(ctx context.Context, f googledrive.File) (googledrive.File, error) {
+	_, err := d.driveFake.CreateFolder(ctx, f)
+	d.cancel()
+	return googledrive.File{}, errors.Join(err, &googledrive.Error{Code: 503})
+}
+func TestReopenedJournalRecoversLostFolderCreation(t *testing.T) {
+	e, d := engineFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	e.Destination = cancelAfterFolder{d, cancel}
+	if err := e.Run(ctx); err == nil {
+		t.Fatal("expected interruption")
+	}
+	key := append([]byte(nil), e.Store.Key...)
+	if err := e.Store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := journal.Open(filepath.Join(e.Directory, "progress.db"), key, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Store = s
+	defer s.Close()
+	e.Destination = d
+	e.Meta.PauseUntil = time.Time{}
+	if err = e.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if d.next != 3 || len(d.files) != 3 {
+		t.Fatal("reopen duplicated destination IDs")
+	}
+}
+
+func TestUnrecognizedStagingStopsBeforeCloudMutation(t *testing.T) {
+	e, d := engineFixture(t)
+	if err := os.WriteFile(e.stagePath(999), []byte("unknown"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if e.Run(context.Background()) == nil || d.next != 0 {
+		t.Fatal("unrecognized staging was ignored")
 	}
 }

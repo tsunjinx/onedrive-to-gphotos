@@ -34,7 +34,16 @@ func present(raw json.RawMessage) bool { return len(raw) > 0 && string(raw) != "
 
 // WalkCheckpoint uses a disk-backed delta inventory for root migrations only.
 func (c Client) WalkCheckpoint(ctx context.Context, folder string, store *journal.Store, binding string, out io.Writer, visit func(onedrive.Item) error) error {
+	return c.walkCheckpoint(ctx, folder, store, binding, out, false, visit)
+}
+func (c Client) WalkTreeCheckpoint(ctx context.Context, folder string, store *journal.Store, binding string, out io.Writer, visit func(onedrive.Item) error) error {
+	return c.walkCheckpoint(ctx, folder, store, binding, out, true, visit)
+}
+func (c Client) walkCheckpoint(ctx context.Context, folder string, store *journal.Store, binding string, out io.Writer, folders bool, visit func(onedrive.Item) error) error {
 	if strings.Trim(folder, "/") != "" {
+		if folders {
+			return c.WalkTree(ctx, folder, visit)
+		}
 		return c.Walk(ctx, folder, visit)
 	}
 	if out == nil {
@@ -179,8 +188,17 @@ func (c Client) WalkCheckpoint(ctx context.Context, folder string, store *journa
 		if err != nil || excluded {
 			return err
 		}
-		if present(item.Root) || item.Folder != nil && item.Package == nil {
+		if present(item.Root) {
 			return nil
+		}
+		if item.Folder != nil && item.Package == nil {
+			if folders {
+				return visit(item.item(name))
+			}
+			return nil
+		}
+		if folders && (item.Package != nil || item.File == nil || item.Size == nil) {
+			return fmt.Errorf("unsupported object or missing size at %q; inventory incomplete", name)
 		}
 		if item.File != nil && item.ETag == "" && item.CTag == "" {
 			return errors.New("delta omitted source version metadata; inventory incomplete")

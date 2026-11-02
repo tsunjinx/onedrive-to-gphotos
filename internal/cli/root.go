@@ -17,10 +17,16 @@ const Version = "0.1.0-dev"
 
 const help = `od2gp - personal photo and video migration
 Direction: OneDrive -> Google Photos. Source files are kept.
+Google Drive file/folder migration: od2gp drive menu.
 
 Usage:
   od2gp menu
   od2gp drive menu
+  od2gp drive plan --source / --name "OneDrive Backup" --exclude-personal-vault
+  od2gp drive resume --job JOB_ID --workers auto
+  od2gp drive status --job JOB_ID
+  od2gp drive report --job JOB_ID --format csv
+  od2gp drive verify --job JOB_ID
   od2gp help
   od2gp version
   od2gp setup
@@ -97,14 +103,15 @@ func RunContext(ctx context.Context, args []string, input io.Reader, stdout, std
 	if len(args) == 0 && interactiveConsole(input, stdout) {
 		return interactiveMenu(ctx, input, stdout, stderr, getenv, root)
 	}
+	if len(args) > 0 && args[0] == "drive" {
+		return driveCommand(ctx, args[1:], input, stdout, stderr, getenv, root)
+	}
 	configEnv, configErr := settings.Env(root, getenv)
 	if configErr != nil {
 		fmt.Fprintln(stderr, configErr)
 		return 1
 	}
-	if len(args) > 0 && args[0] == "drive" {
-		return driveCommand(ctx, args[1:], input, stdout, stderr, configEnv, root)
-	}
+
 	if len(args) > 0 {
 		switch args[0] {
 		case "plan", "run", "resume", "status", "report", "resize-cache":
@@ -136,6 +143,15 @@ func RunContext(ctx context.Context, args []string, input io.Reader, stdout, std
 			return graphSourceCommand(ctx, args[1:], input, stdout, stderr, configEnv, root)
 		}
 		return sourceCommand(ctx, args[1:], input, stdout, stderr, configEnv, root)
+	}
+	if len(args) == 3 && args[0] == "auth" && args[2] == "gdrive" {
+		unlock, err := lockSource(root)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		defer unlock()
+		return authCommand(ctx, args[1:], input, stdout, stderr, configEnv)
 	}
 	if len(args) > 0 && args[0] == "auth" {
 		return authCommand(ctx, args[1:], input, stdout, stderr, configEnv)

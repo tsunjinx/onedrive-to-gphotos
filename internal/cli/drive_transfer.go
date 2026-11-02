@@ -8,17 +8,21 @@ import (
 	"od2gp/internal/identity"
 	"od2gp/internal/settings"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
 func driveCommand(ctx context.Context, args []string, input io.Reader, out, errOut io.Writer, getenv func(string) string, root string) int {
 	if len(args) != 1 || args[0] != "menu" {
-		fmt.Fprintln(errOut, "Usage: od2gp drive menu")
-		return 2
+		env, err := settings.Env(root, getenv)
+		if err != nil {
+			fmt.Fprintln(errOut, err)
+			return 1
+		}
+		return driveTask(ctx, args, input, out, errOut, env, root)
 	}
 	opts, _ := loadMenuOptions(root)
 	a := menuApp{ctx: ctx, input: bufio.NewReader(input), out: out, errOut: errOut, options: opts}
+	a.saveOptions = func(o transferOptions) error { return saveMenuOptions(root, o) }
 	a.dispatch = func(args []string, in io.Reader, o, e io.Writer) int { return RunContext(ctx, args, in, o, e, getenv) }
 	return a.driveMenu(root, getenv)
 }
@@ -30,7 +34,7 @@ func (a *menuApp) dt(en, vi string) string {
 }
 func (a *menuApp) driveMenu(root string, getenv func(string) string) int {
 	for {
-		fmt.Fprintln(a.out, a.dt("Google Drive: account setup (transfer implementation in progress)\n1) Link accounts\n2) Check connections\n0) Back", "Google Drive: thiết lập tài khoản (transfer đang được triển khai)\n1) Liên kết tài khoản\n2) Kiểm tra kết nối\n0) Quay lại"))
+		fmt.Fprintln(a.out, a.dt("OneDrive → Google Drive\n1) Link accounts\n2) Check connections\n3) New migration\n4) Continue\n5) Progress\n6) Export report\n7) Transfer options\n8) Sign out an account\n0) Back", "OneDrive → Google Drive\n1) Liên kết tài khoản\n2) Kiểm tra kết nối\n3) Tạo tác vụ mới\n4) Tiếp tục\n5) Tiến trình\n6) Xuất báo cáo\n7) Tùy chọn truyền\n8) Đăng xuất tài khoản\n0) Quay lại"))
 		c, e := a.ask("Choose", "0")
 		if e != nil || c == "0" {
 			return 0
@@ -38,6 +42,14 @@ func (a *menuApp) driveMenu(root string, getenv func(string) string) int {
 		switch c {
 		case "1":
 			a.driveAccounts(root, getenv)
+		case "3":
+			a.newDrivePlan()
+		case "4", "5", "6":
+			a.savedDriveAction(root, c)
+		case "7":
+			a.configureDriveWorkers()
+		case "8":
+			a.driveLogout()
 		case "2":
 			a.execute([]string{"auth", "check", "onedrive"}, a.out)
 			a.execute([]string{"auth", "check", "gdrive"}, a.out)
@@ -85,7 +97,14 @@ func (a *menuApp) driveAccounts(root string, getenv func(string) string) {
 			break
 		}
 	}
-	id, e := a.ask(a.dt("Microsoft client ID (Enter keeps configured ID)", "Microsoft client ID (Enter giữ cấu hình hiện tại)"), getenv("OD2GP_MICROSOFT_CLIENT_ID"))
+	configuredID := getenv("OD2GP_MICROSOFT_CLIENT_ID")
+	if configuredID == "" {
+		configuredID = saved.MicrosoftClientID
+	}
+	if configuredID == "" {
+		configuredID = settings.DefaultMicrosoftClientID
+	}
+	id, e := a.ask(a.dt("Microsoft client ID (Enter keeps configured ID)", "Microsoft client ID (Enter giữ cấu hình hiện tại)"), configuredID)
 	if e != nil {
 		return
 	}
@@ -127,5 +146,3 @@ func (a *menuApp) driveAccounts(root string, getenv func(string) string) {
 	a.execute([]string{"auth", "check", "gdrive"}, a.out)
 	fmt.Fprintln(a.out, a.dt("Setup choices saved. Connection checks above are authoritative; console steps were acknowledged by you, not remotely verified.", "Đã lưu thiết lập. Kết quả kiểm tra kết nối ở trên mới xác nhận truy cập; các bước console do bạn xác nhận."))
 }
-
-var _ = strconv.Itoa

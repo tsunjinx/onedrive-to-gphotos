@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/oauth2"
 	"io"
 	"net/http"
 	"net/url"
@@ -73,6 +74,14 @@ func (c Client) request(ctx context.Context, method, address string, body io.Rea
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
+		}
+		var reconnect interface{ RequireReconnect() bool }
+		if errors.As(err, &reconnect) && reconnect.RequireReconnect() {
+			return nil, &Error{Code: 401, Reason: "authorization requires reconnect"}
+		}
+		var authorization *oauth2.RetrieveError
+		if errors.As(err, &authorization) {
+			return nil, &Error{Code: 401, Reason: "authorization requires reconnect"}
 		}
 		return nil, &Error{Reason: "network interruption"}
 	}
@@ -209,4 +218,53 @@ func (c Client) put(ctx context.Context, address string, data []byte, contentRan
 	var f File
 	e = decode(r, &f)
 	return f.Size, &f, e
+}
+
+// Children lists accessible non-trashed entries in an application-authorized folder.
+func (c Client) Children(ctx context.Context, parent string) ([]File, error) {
+	var all []File
+	seen := map[string]bool{}
+	token := ""
+	for {
+		q := url.Values{"q": []string{"'" + strings.ReplaceAll(strings.ReplaceAll(parent, "\\", "\\\\"), "'", "\\'") + "' in parents and trashed=false"}, "pageSize": []string{"1000"}, "fields": []string{"nextPageToken,files(" + fields + ")"}}
+		if token != "" {
+			q.Set("pageToken", token)
+		}
+		r, e := c.request(ctx, "GET", api+"files?"+q.Encode(), nil, nil)
+		if e != nil {
+			return nil, e
+		}
+		var page struct {
+			Files []File `json:"files"`
+			Next  string `json:"nextPageToken"`
+		}
+		if e = decode(r, &page); e != nil {
+			return nil, e
+		}
+		all = append(all, page.Files...)
+		if page.Next == "" {
+			return all, nil
+		}
+		if seen[page.Next] {
+			return nil, errors.New("Drive repeated pagination token")
+		}
+		seen[page.Next] = true
+		token = page.Next
+	}
+}
+
+// RootID resolves the 'root' alias to the actual parent ID returned by Drive.
+func (c Client) RootID(ctx context.Context) (string, error) {
+	r, e := c.request(ctx, "GET", api+"files/root?fields=id", nil, nil)
+	if e != nil {
+		return "", e
+	}
+	var f File
+	if e = decode(r, &f); e != nil {
+		return "", e
+	}
+	if f.ID == "" {
+		return "", errors.New("Drive root ID unavailable")
+	}
+	return f.ID, nil
 }

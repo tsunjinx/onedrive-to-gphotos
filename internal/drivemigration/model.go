@@ -19,6 +19,9 @@ import (
 const Kind = "onedrive-google-drive-v1"
 
 type Meta struct {
+	RootParentID                                                                                            string
+	VerifiedAt                                                                                              time.Time
+	FinalError                                                                                              string
 	Kind, ID, Folder, RootName, DriveID, SourceSubject, SourceClient, DestinationSubject, DestinationClient string
 	CacheBytes                                                                                              int64
 	InventoryComplete, ExcludeVault                                                                         bool
@@ -68,7 +71,7 @@ func Discover(ctx context.Context, s Source, store *journal.Store, m *Meta, prog
 	seen := map[string]bool{}
 	paths := map[string]bool{}
 	var id int64 = 1
-	err := s.WalkTree(ctx, m.Folder, func(item onedrive.Item) error {
+	visit := func(item onedrive.Item) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -106,7 +109,16 @@ func Discover(ctx context.Context, s Source, store *journal.Store, m *Meta, prog
 			fmt.Fprintf(progress, "Scanned %d source files and folders.\n", id-1)
 		}
 		return nil
-	})
+	}
+	var err error
+	if checkpoint, ok := s.(interface {
+		WalkTreeCheckpoint(context.Context, string, *journal.Store, string, io.Writer, func(onedrive.Item) error) error
+	}); ok {
+		binding := fmt.Sprintf("drive-tree-v1:%s:%s:%s:%s:%t", m.ID, m.DriveID, m.SourceSubject, m.Folder, m.ExcludeVault)
+		err = checkpoint.WalkTreeCheckpoint(ctx, m.Folder, store, binding, progress, visit)
+	} else {
+		err = s.WalkTree(ctx, m.Folder, visit)
+	}
 	if err != nil {
 		return err
 	}
@@ -123,7 +135,9 @@ func Discover(ctx context.Context, s Source, store *journal.Store, m *Meta, prog
 		if !ok || !parent.Source.IsDir {
 			return fmt.Errorf("missing parent for %q", n.Source.Path)
 		}
-		children[n.Parent]++
+		if n.State != "skipped" {
+			children[n.Parent]++
+		}
 		if children[n.Parent] > 500000 {
 			return fmt.Errorf("folder contains too many items: %q", n.Parent)
 		}

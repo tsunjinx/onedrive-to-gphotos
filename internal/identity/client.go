@@ -50,6 +50,10 @@ func (s *persistentSource) Token() (*oauth2.Token, error) {
 	}
 	token, err := s.provider.OAuth.TokenSource(s.ctx, &oauth2.Token{RefreshToken: s.session.RefreshToken}).Token()
 	if err != nil {
+		var failure *oauth2.RetrieveError
+		if errors.As(err, &failure) && failure.Response != nil && failure.Response.StatusCode >= 400 && failure.Response.StatusCode < 500 && failure.Response.StatusCode != 429 {
+			return nil, &ReconnectError{}
+		}
 		return nil, errors.New("access could not be refreshed; sign in again if consent expired")
 	}
 	// Save rotation before any further network call can fail.
@@ -70,3 +74,11 @@ func (s *persistentSource) Token() (*oauth2.Token, error) {
 	s.current = token
 	return token, nil
 }
+
+// ReconnectError carries no credential-bearing OAuth response body.
+type ReconnectError struct{}
+
+func (*ReconnectError) Error() string {
+	return "authorization expired or revoked; reconnect the same account"
+}
+func (*ReconnectError) RequireReconnect() bool { return true }

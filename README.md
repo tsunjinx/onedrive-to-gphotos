@@ -2,6 +2,8 @@
 
 Personal CLI for copying photos and videos **from OneDrive to Google Photos** on Windows and macOS. Original OneDrive files will remain untouched.
 
+**New: OneDrive → Google Drive** copies nonempty files and preserves the folder tree, including empty folders. Open menu **11**. This destination is a beta with automated recovery tests; real account/large-transfer acceptance will run on the target machine. See [Drive setup and operation](docs/google-drive.md).
+
 ## Status
 
 Setup, auth, plan/run/resume/status/report with encrypted progress, resumable uploads, bounded retries and video-readiness polling. Native Microsoft Graph client; existing rclone jobs keep their saved progress.
@@ -21,6 +23,7 @@ Menu options: check connections · new migration · continue job · view progres
 
 - **8 — Transfer speed**: Recommended (3 workers), Gentle (1), Faster (6), or Custom (1–8). Remembered between sessions.
 - **9 — Language**: English or Tiếng Việt. Remembered separately from credentials.
+- **11 — OneDrive → Google Drive**: guided account linking, new migration, Continue, progress, reports and separate Auto-workers settings.
 - **10 — Source folder filters**: Exclude drive-root folders from new plans.
 
 ## Setup and sign in

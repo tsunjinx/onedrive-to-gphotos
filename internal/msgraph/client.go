@@ -39,7 +39,7 @@ type Drive struct {
 }
 type resource struct {
 	ID, Name string
-	Size     int64
+	Size     *int64
 	ETag     string                         `json:"eTag"`
 	CTag     string                         `json:"cTag"`
 	Modified string                         `json:"lastModifiedDateTime"`
@@ -57,7 +57,11 @@ type resource struct {
 }
 
 func (r resource) item(name string) onedrive.Item {
-	item := onedrive.Item{ID: r.ID, Name: r.Name, Path: name, Size: r.Size, ModTime: r.Modified, IsDir: r.Folder != nil && r.Package == nil, Hashes: map[string]string{}}
+	var size int64
+	if r.Size != nil {
+		size = *r.Size
+	}
+	item := onedrive.Item{ID: r.ID, Name: r.Name, Path: name, Size: size, ModTime: r.Modified, IsDir: r.Folder != nil && r.Package == nil, Hashes: map[string]string{}}
 	if r.Image != nil {
 		item.Width = r.Image.Width
 		item.Height = r.Image.Height
@@ -112,6 +116,10 @@ func (c Client) request(ctx context.Context, address string) (*http.Response, er
 		}
 		resp, err := client.Do(req)
 		if err != nil {
+			var reconnect interface{ RequireReconnect() bool }
+			if errors.As(err, &reconnect) && reconnect.RequireReconnect() {
+				return nil, err
+			}
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
@@ -403,6 +411,12 @@ func (c Client) list(ctx context.Context, folder string, recursive, folders bool
 				seen[r.ID] = true
 				if r.File != nil && r.ETag == "" && r.CTag == "" {
 					return errors.New("Graph omitted file version metadata; scan is incomplete")
+				}
+				if folders && r.File != nil && r.Size == nil {
+					return fmt.Errorf("unknown file size at %q; inventory incomplete", name)
+				}
+				if folders && r.File == nil && r.Folder == nil && r.Package == nil {
+					return fmt.Errorf("unsupported source object at %q", name)
 				}
 				if folders && r.Package != nil {
 					return fmt.Errorf("unsupported OneDrive package at %q; inventory incomplete", name)

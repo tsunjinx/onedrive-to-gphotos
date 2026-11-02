@@ -134,7 +134,7 @@ func (d *transferDisplay) Write(p []byte) (int, error) {
 	defer d.mu.Unlock()
 	for _, line := range strings.Split(strings.TrimSpace(string(p)), "\n") {
 		line = strings.TrimSpace(line)
-		routine := strings.HasPrefix(line, "Queue batch:") || strings.HasPrefix(line, "Create batch:") || strings.HasPrefix(line, "Transfers:") || strings.HasPrefix(line, "Batch creation:") || strings.HasPrefix(line, "Transfer summary:") || strings.HasPrefix(line, "Scanned ")
+		routine := strings.HasPrefix(line, "Queue batch:") || strings.HasPrefix(line, "Create batch:") || strings.HasPrefix(line, "Transfers:") || strings.HasPrefix(line, "Batch creation:") || strings.HasPrefix(line, "Transfer summary:") || strings.HasPrefix(line, "Drive progress:") || strings.HasPrefix(line, "Scanned ")
 		if strings.HasPrefix(line, "[") {
 			routine = routine || strings.Contains(line, "Uploaded ") || strings.Contains(line, "Upload session and bytes:") || strings.Contains(line, "Download and version checks:") || strings.Contains(line, "Resuming verified source download") || strings.Contains(line, "Source ignored the range") || strings.HasSuffix(line, ": discovered") || strings.HasSuffix(line, ": uploading") || strings.HasSuffix(line, ": staged") || strings.HasSuffix(line, ": uploaded") || strings.HasSuffix(line, ": downloading") || strings.HasSuffix(line, ": processing") || strings.HasSuffix(line, ": created")
 		}

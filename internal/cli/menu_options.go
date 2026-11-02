@@ -14,6 +14,7 @@ import (
 )
 
 type transferOptions struct {
+	DriveWorkers    string `json:"drive_workers,omitempty"`
 	Language        string `json:"language,omitempty"`
 	ExcludedFolders string `json:"excluded_folders,omitempty"`
 	Workers         int    `json:"workers"`
@@ -28,7 +29,11 @@ func defaultTransferOptions() transferOptions {
 }
 func (o transferOptions) valid() bool {
 	_, err := menuExcludedFolders(o.ExcludedFolders)
-	return err == nil && len(o.ExcludedFolders) <= 2048 && (o.Language == "" || o.Language == "en" || o.Language == "vi") && o.Workers >= 1 && o.Workers <= 8 && o.BatchSize >= 1 && o.BatchSize <= 50 && o.Retries >= 0 && o.Retries <= 10
+	driveOK := o.DriveWorkers == "" || o.DriveWorkers == "auto"
+	if n, e := strconv.Atoi(o.DriveWorkers); e == nil && n >= 1 && n <= 8 {
+		driveOK = true
+	}
+	return driveOK && err == nil && len(o.ExcludedFolders) <= 2048 && (o.Language == "" || o.Language == "en" || o.Language == "vi") && o.Workers >= 1 && o.Workers <= 8 && o.BatchSize >= 1 && o.BatchSize <= 50 && o.Retries >= 0 && o.Retries <= 10
 }
 func (o transferOptions) localizedSummary(language string) string {
 	wait := "check videos once"
@@ -150,9 +155,11 @@ func (a *menuApp) configureTransfers() {
 		opts := a.currentOptions()
 		switch choice {
 		case "1":
+			driveWorkers := opts.DriveWorkers
 			language := opts.Language
 			filters := opts.ExcludedFolders
 			opts = defaultTransferOptions()
+			opts.DriveWorkers = driveWorkers
 			opts.Language = language
 			opts.ExcludedFolders = filters
 		case "2":
