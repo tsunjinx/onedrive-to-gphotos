@@ -32,7 +32,7 @@ func CheckStore() error {
 // Only a compact offline credential is persisted; access/ID tokens stay in memory.
 // Both supported keyrings impose size limits. Fail closed rather than writing a file.
 func Save(provider string, s Session) error {
-	if provider != "onedrive" && provider != "google" {
+	if provider != "onedrive" && provider != "google" && provider != "gdrive" {
 		return errors.New("invalid provider")
 	}
 	data, err := json.Marshal(s)
@@ -62,7 +62,7 @@ func Load(provider string) (Session, error) {
 	return s, nil
 }
 func Logout(provider string) error {
-	if provider != "onedrive" && provider != "google" {
+	if provider != "onedrive" && provider != "google" && provider != "gdrive" {
 		return errors.New("invalid provider")
 	}
 	err := keyring.Delete(service, provider)

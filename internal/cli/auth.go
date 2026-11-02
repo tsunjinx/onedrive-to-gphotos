@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"od2gp/internal/googledrive"
 	"od2gp/internal/identity"
 )
 
@@ -35,8 +36,8 @@ Policy, including Limited Use: https://developers.google.com/terms/api-services-
 `
 
 func authCommand(ctx context.Context, args []string, input io.Reader, stdout, stderr io.Writer, getenv func(string) string) int {
-	if len(args) != 2 || (args[1] != "onedrive" && args[1] != "google") {
-		fmt.Fprintln(stderr, "Usage: od2gp auth <login|status|check|logout> <onedrive|google>")
+	if len(args) != 2 || (args[1] != "onedrive" && args[1] != "google" && args[1] != "gdrive") {
+		fmt.Fprintln(stderr, "Usage: od2gp auth <login|status|check|logout> <onedrive|google|gdrive>")
 		return 2
 	}
 	action, name := args[0], args[1]
@@ -47,7 +48,7 @@ func authCommand(ctx context.Context, args []string, input io.Reader, stdout, st
 			return 1
 		}
 		fmt.Fprintln(stdout, "Local credential removed. Cloud files are unchanged.")
-		if name == "google" {
+		if name == "google" || name == "gdrive" {
 			fmt.Fprintln(stdout, "Revoke the provider grant at https://myaccount.google.com/connections")
 		} else {
 			fmt.Fprintln(stdout, "Revoke the provider grant at https://account.live.com/consent/Manage")
@@ -74,15 +75,27 @@ func authCommand(ctx context.Context, args []string, input io.Reader, stdout, st
 	if action == "check" {
 		ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		defer cancel()
-		_, updated, err := identity.AuthorizedClient(ctx, p)
+		client, updated, err := identity.AuthorizedClient(ctx, p)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		if name == "gdrive" {
+			a, err := (googledrive.Client{HTTP: client}).About(ctx)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 1
+			}
+			fmt.Fprintf(stdout, "Google Drive API available; storage usage %d bytes, limit %d bytes (0 means not reported).\n", a.Storage.Usage, a.Storage.Limit)
+		}
 		fmt.Fprintf(stdout, "%s account %q: refreshed access and identity verified.\n", name, accountLabel(updated))
 		return 0
 	}
-	fmt.Fprint(stdout, privacyNotice)
+	if name == "gdrive" {
+		fmt.Fprintln(stdout, "Google Drive: create and manage app-authorized destination files and folders. Offline credentials stay in the OS credential store. Signing in transfers no files.")
+	} else {
+		fmt.Fprint(stdout, privacyNotice)
+	}
 	fmt.Fprintf(stdout, "Connect %s using the browser and save its offline credential? Type yes: ", name)
 	// A bounded line is sufficient for consent; EOF and every other response decline.
 	line, err := bufio.NewReader(io.LimitReader(input, 64)).ReadString('\n')

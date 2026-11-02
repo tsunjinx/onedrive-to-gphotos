@@ -12,8 +12,10 @@ import (
 const DefaultMicrosoftClientID = "dd4ceec5-81a2-4c43-b4f7-5680436926aa"
 
 type Settings struct {
+	DriveSetupStep    int    `json:"drive_setup_step,omitempty"`
 	SourceBackend     string `json:"source_backend,omitempty"`
 	MicrosoftClientID string `json:"microsoft_client_id"`
+	DriveClientFile   string `json:"drive_client_file,omitempty"`
 	GoogleClientFile  string `json:"google_client_file"`
 }
 
@@ -92,6 +94,8 @@ func Env(root string, getenv func(string) string) (func(string) string, error) {
 				return saved.SourceBackend
 			}
 			return "graph"
+		case "OD2GP_DRIVE_CLIENT_FILE":
+			return saved.DriveClientFile
 		case "OD2GP_GOOGLE_CLIENT_FILE":
 			return saved.GoogleClientFile
 		default:

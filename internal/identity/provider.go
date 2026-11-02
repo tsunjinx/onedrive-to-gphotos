@@ -31,8 +31,12 @@ func Configure(name string, getenv func(string) string) (Provider, error) {
 		p.Discovery = "https://login.microsoftonline.com/consumers/v2.0/.well-known/openid-configuration"
 		p.UserInfoHost = "graph.microsoft.com"
 		p.Required = []string{"Files.Read"}
-	case "google":
-		file, err := os.Open(getenv("OD2GP_GOOGLE_CLIENT_FILE"))
+	case "google", "gdrive":
+		clientFile := getenv("OD2GP_GOOGLE_CLIENT_FILE")
+		if name == "gdrive" && getenv("OD2GP_DRIVE_CLIENT_FILE") != "" {
+			clientFile = getenv("OD2GP_DRIVE_CLIENT_FILE")
+		}
+		file, err := os.Open(clientFile)
 		if err != nil {
 			return p, errors.New("set OD2GP_GOOGLE_CLIENT_FILE to a readable Google Desktop app JSON file")
 		}
@@ -51,11 +55,14 @@ func Configure(name string, getenv func(string) string) (Provider, error) {
 			return p, errors.New("Google client file must contain an installed Desktop app client_id and client_secret")
 		}
 		p.Required = []string{"https://www.googleapis.com/auth/photoslibrary.appendonly", "https://www.googleapis.com/auth/photoslibrary.readonly.appcreateddata"}
+		if name == "gdrive" {
+			p.Required = []string{"https://www.googleapis.com/auth/drive.file"}
+		}
 		p.OAuth = oauth2.Config{ClientID: cfg.Installed.ID, ClientSecret: cfg.Installed.Secret, Scopes: append([]string{"openid", "email"}, p.Required...), Endpoint: oauth2.Endpoint{AuthURL: "https://accounts.google.com/o/oauth2/v2/auth", TokenURL: "https://oauth2.googleapis.com/token", AuthStyle: oauth2.AuthStyleInParams}}
 		p.Discovery = "https://accounts.google.com/.well-known/openid-configuration"
 		p.UserInfoHost = "openidconnect.googleapis.com"
 	default:
-		return p, errors.New("provider must be onedrive or google")
+		return p, errors.New("provider must be onedrive, google or gdrive")
 	}
 	return p, nil
 }

@@ -129,3 +129,25 @@ The original acceptance gates remain below until every listed condition is valid
 Confirmed scope: personal use with photos and videos in version one. Public distribution and signing/notarization are outside scope. Optional features: album mapping and incremental scanning, each with its own acceptance criteria.
 
 Owner live evidence (2026-10-18): native job `54f77861b717b5e67baa2b15312eb09b` completed inventory (1,866 files, 630 skipped, 40,567,884 eligible bytes) and started uploading photos with Vault excluded. Its saved cap is 30 GiB. Parallel transfer changes still require a live restart/benchmark.
+
+
+## Planned Google Drive destination — 2026-11-02
+
+Design only; all implementation remains pending. Scope and acceptance are in the corresponding 2026-11-02 section of plan.md. Existing Google Photos tasks above are retained.
+
+- [ ] GD1: Implement bilingual guided account linking with official console links, existing-config import, step validation and secure token persistence. Verify wrong tenant, disabled API, missing consent/test user, redirect mismatch and same-account reconnect. Depends: none.
+- [ ] GD2: Add destination-specific job schema and account/root bindings. Verify old Photos journals and jobs still work and cannot be confused with Drive records. Depends: GD1.
+- [ ] GD3: Transfer a minimal nested tree into an app-created destination root, including empty folders and recorded zero-byte exclusions. Verify exact names, parents and bytes. Depends: GD2.
+- [ ] Gate A: Both-platform account linking and the minimal real transfer succeed before expanding scope.
+- [ ] GD4: Add folder-aware checkpointed inventory, preview, source versions and preflight limits. Verify unknown-size files are not skipped and inaccessible/special objects remain visible. Depends: GD3.
+- [ ] GD5: Implement persistent ID mapping and parent-dependent creation with pre-generated destination IDs. Verify timeout/409 recovery and no duplicates after restart. Depends: GD4.
+- [ ] GD6: Harden reusable cross-job matching and cache cleanup. Verify missing identities/metadata cannot match, different roots remain isolated, and skipped partial files cannot leak staging. Depends: GD2.
+- [ ] GD7: Add bounded parallel transfer, resumable sessions and verified cache release. Verify missing/expired sessions, changed source, crash before/after journal saves and cleanup. Depends: GD5, GD6.
+- [ ] Gate B: Interrupted folder creation and uploads resume without duplicates, wrong parents or cache-cap violations.
+- [ ] GD8: Add delayed per-item retry queue, provider pauses and explicit intervention states. Verify prolonged failures beyond five attempts recover automatically and one failed branch does not block independent work. Depends: GD7.
+- [ ] GD9: Add final tree/content reconciliation and CSV/JSON reports. Verify unresolved files cannot produce a success status; preserve empty folders while excluding only confirmed zero-byte files. Depends: GD8.
+- [ ] GD10: Implement measured Auto-workers (start 3, range 1–8), cooldown/hysteresis and fixed-mode fallback. Verify mixed sizes, throughput regression, 429/503, network failures, staging pressure and zero deadlocks. Depends: GD8.
+- [ ] GD11: Integrate Drive migration, Continue, account checks and compact progress in English/Vietnamese menus. Verify destination identity display, worker status and retry countdown. Depends: GD9, GD10.
+- [ ] Gate C: Full automated tests/race/vet/build and Windows PowerShell/pwsh/macOS checks pass. Automated tests are not live-provider proof.
+- [ ] GD12: Run small and medium representative live trials, including source changes, network interruption, process kill and disposable-machine power loss. Verify counts/tree/checksums and same-job recovery. Depends: Gate C.
+- [ ] GD13: Document setup, quota/consent limitations, intervention recovery and operating instructions; approve full-drive rollout only after live gates pass. Depends: GD12.

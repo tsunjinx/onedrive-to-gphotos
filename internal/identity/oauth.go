@@ -105,7 +105,7 @@ func loginWithListener(ctx context.Context, p Provider, open func(string) error,
 	serveErrors := make(chan error, 1)
 	go func() { serveErrors <- server.Serve(listener) }()
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier)}
-	if p.Name == "google" {
+	if p.Name == "google" || p.Name == "gdrive" {
 		opts = append(opts, oauth2.AccessTypeOffline, oauth2.SetAuthURLParam("prompt", "consent select_account"))
 	} else {
 		opts = append(opts, oauth2.SetAuthURLParam("prompt", "select_account"))

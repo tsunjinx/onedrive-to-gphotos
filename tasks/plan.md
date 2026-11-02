@@ -279,3 +279,94 @@ Next gates: owner validates a small non-overlapping filtered plan and continued 
 ## Large-download and saved-cap increment — 2026-10-26
 
 Implemented idle-based downloads, authenticated source-range resume, bounded source retries coordinated through the job's provider pause, and increase-only saved-job staging resize. These supersede the earlier full-download restart and immutable-cap limitations. Continue → c performs a local locked metadata update with no uploads; subsequent Continue uses the same history. Remaining gates are live throughput, representative video READY/playback/audio, native Windows credentials, abrupt-kill and disposable-VM power-loss acceptance.
+
+
+## 2026-11-02 — Planned feature: OneDrive → Google Drive
+
+Status: design agreed in conversation; not implemented. This section specifies the new Google Drive destination only. Existing Google Photos plans, jobs and acceptance records above remain intact. No implementation or publication is authorized by this documentation update alone.
+
+### Agreed scope and completion contract
+
+- One-way, read-only-source copy of all ordinary files and the complete folder tree from one selected OneDrive drive or folder into a dedicated Google Drive destination folder.
+- Preserve exact file/folder names, Unicode and parent-child relationships. Preserve empty folders, including folders whose only children are excluded zero-byte files. Never silently rename or flatten paths.
+- Skip only files whose size is confirmed to be exactly zero; report `skipped_empty_file`. Unknown size or failed metadata requests are errors to resolve, not empty files.
+- Preserve original binary contents and extensions; do not convert Office files to Google Workspace formats. Preserve source timestamps where supported and report metadata differences.
+- Keep identical files at separate source locations as separate destination entries. Do not merge by filename or content alone. Keep OneDrive originals and pre-existing destination data.
+- Permissions, share links, version history and service-specific objects are not automatically portable. Personal Vault, inaccessible objects, OneNote packages and remote/shared shortcuts must be classified explicitly. Unsupported or inaccessible content prevents a claim of full coverage unless the user accepts a persisted, visible exclusion. Unknown contents retain unknown counts/bytes.
+- Success means all in-scope folders and nonempty ordinary files have verified destination records, with no unresolved items. Reports distinguish completed, empty-file exclusions, accepted exclusions, retrying, intervention-required and unverified outcomes.
+- This is a migration, not continuous two-way synchronization. Source changes during transfer require version validation and a final reconciliation pass. Exact final equivalence requires a stable source during that pass; no atomic whole-drive snapshot is promised.
+
+### Guided account linking (first implementation slice)
+
+Add bilingual menu entries for Link OneDrive, Link Google Drive, Check both connections and Reconnect. Each step offers Open link, Copy required value, Done/check and Back; display the URL as a fallback when browser/clipboard integration is unavailable. Persist non-secret setup progress. Import existing client configuration or guide creation; no environment-variable editing required in normal use.
+
+Microsoft: open https://entra.microsoft.com/ and guide App registrations, account types supporting personal Microsoft accounts, Mobile/Desktop platform and the exact redirect URI used by the CLI. Use delegated read-only `Files.Read` for ordinary own-drive access plus required identity/offline scopes. Do not request write access to OneDrive. Validate client configuration, authenticate, show account identity, list drives and verify source reading. Tenant/access errors must have specific guidance.
+
+Google: select a project, open https://console.cloud.google.com/apis/library/drive.googleapis.com to enable Drive API, and guide OAuth consent and Desktop OAuth client creation at https://console.cloud.google.com/apis/credentials. Accept a JSON file using a file picker where available or a path prompt. Prefer `drive.file` for application-created/explicitly authorized destination content; an arbitrary pasted folder ID does not grant access. Existing-folder selection needs an authorization mechanism such as Picker, or is excluded from the first slice in favor of an app-created destination root.
+
+Validate API availability, granted scopes, destination identity and available storage. Do not mark linked merely because JSON is structurally valid. Signing in does not transfer content. Confirm destination creation separately. Distinguish disabled API, missing test user, denied scopes and redirect mismatch. Explain Google External/Testing refresh-token expiry (normally seven days for Drive scopes); guide appropriate publishing configuration without promising permanent credentials. Console publishing state may require user confirmation if it cannot be read with the app's limited permissions.
+
+Keep credentials and encrypted refresh/session information local, protected with the OS credential store. Bind jobs to source/destination identities and OAuth clients. Reconnection must not silently switch a saved job to a different account.
+
+### Inventory and destination structure
+
+Retain both folder and file nodes with source drive/item/parent IDs, exact names, type, size and source version. Reuse resumable Graph inventory where suitable; do not reuse Photos-only media classification. Check storage, largest file, staging capacity, hierarchy depth and provider item limits before transfer. Every discovered object must have a recorded classification.
+
+Persist the mapping `(source account, drive ID, item ID, source version, destination account, destination root)` to Google Drive item and parent IDs. Create parents before children; independent branches may proceed concurrently. Local staging uses internal IDs rather than original paths so Windows filesystem restrictions do not rename cloud objects. Existing destination conflicts require explicit resolution; no automatic overwrite, merging or suffix renaming.
+
+### Transfer and durable recovery
+
+Add a Google Drive destination client and a dedicated tree-transfer engine. Share OAuth/keyring, encrypted journal/staging, read-only Graph transport and UI infrastructure where safe; do not route Drive through Photos upload tokens or batchCreate.
+
+Pre-generate supported Drive IDs and save them durably before file/folder creation. On timeout, conflict or ambiguous result, query the same destination ID and reconcile identity/content before retrying. Never create a new destination ID solely because the response was lost.
+
+Use bounded concurrent downloads/uploads and resumable upload sessions for large files. Persist session, offsets, source version and destination IDs. Query server progress on resume. Expired sessions require a destination check before restarting upload with the same identity. Save verification durably before deleting staging; cleanup must also recover after a crash. Keep journal history after cache deletion.
+
+Fix and regression-test the previously identified cross-job identity/metadata matching and skipped-partial-cache issues before reuse. Drive jobs must not inherit Photos completion history. Cross-job reuse requires exact account/root bindings and sufficient source-version evidence; missing facts must not establish a match.
+
+### Unattended operation — agreed behavior
+
+Do not terminate the whole Drive job because a transient operation exceeded five attempts. Use bounded retry bursts followed by a persisted cooldown and automatic requeue. Bound request frequency and maximum backoff, not the total number of transient-recovery cycles. Honor Retry-After and provider quota signals; do not busy-loop or evade limits.
+
+A repeatedly failing file moves to a delayed queue while other files continue. A failed folder blocks only its dependent subtree. Global network/provider pauses suspend dispatch appropriately; refresh credentials automatically when permitted. Staging pressure applies backpressure and waits for cleanup rather than starting more downloads. Surface retained-cache blockers when no work can release space.
+
+When all remaining work is delayed, stay alive with a visible reason and next retry time. Authentication requiring renewed consent, persistent access denial, exhausted storage, invalid source/destination state or local disk failure enters an explicit intervention state. Keep processing independent eligible work where possible. A source failure, machine sleep/shutdown or user cancellation can also interrupt work; destination-server errors are not the only physically possible blocker. Durable recovery continues after relaunch; boot auto-start is not promised.
+
+### Integrity and reports
+
+Check destination ID, exact name, parent, size and source version; reconcile all folders including empty ones. Compute SHA-256 during download and compare with destination checksum when supplied. If checksum is unavailable, label the actual verification strength; do not claim byte-level verification based only on names/sizes. Any additional full download for verification must be an explicit mode with its bandwidth cost shown.
+
+Recheck source version around transfer and classify changes for another scan/retry. Final verification reports missing, unexpected, changed, pending and unresolved nodes; never hide these beneath a success status. Export CSV/JSON with source-relative path, target ID, status, verification and reason; redact secrets.
+
+### Stable Auto-workers — release gate
+
+Default start: 3 workers; adjustable range 1–8 with fixed-worker fallback in menu. Measure transfer throughput, latency, retry/throttling rate and staging pressure over time windows, not just successful-file counts. Mixed small files and large videos must not falsely indicate an improvement.
+
+Increase by one only after a stable observation window; enforce cooldown/hysteresis. Compare throughput before/after and revert an increase without meaningful benefit. Reduce on throttling, recurring network errors or staging pressure. Reducing concurrency stops new dispatch without canceling healthy in-flight uploads. Share provider pause state across workers. Keep memory, pending requests and staging within hard bounds independent of the current worker count.
+
+Display active/target workers and adjustment reason, file/folder counts, transferred bytes, speeds, approximate ETA, staging usage and retry countdown. No per-chunk scrolling in normal mode; retain diagnostics mode. Choose numerical thresholds from controlled mixed-workload tests before enabling automatic mode by default.
+
+### Ordered delivery and acceptance
+
+1. Account wizard and destination identity: link both accounts on Windows/macOS; correct error routing, secure storage and no upload on login.
+2. Minimal vertical slice: new Drive job, one nested folder, one nonempty file, empty folder and zero-byte exclusion; verify exact tree, content and IDs.
+3. Full inventory/preflight: checkpoint folder/file scans, classify special objects and preview totals/limits without silent exclusions.
+4. Durable tree scheduler: parent dependencies, account/job locking, pre-generated IDs and explicit conflicts; repeat requests do not duplicate entries.
+5. Bounded transfer/cache: parallel transfers, large-file resume and durable cleanup; preserve cap and source-version checks.
+6. Unattended recovery: network/DNS/429/5xx beyond the old retry budget, failed subtree isolation and automatic recovery after service returns; no false completion.
+7. Integrity and final reconciliation: tree, sizes/checksums, changing source and complete reports.
+8. Auto-workers: measurement-driven tuning, cooldown and staging bounds under fault injection and mixed file sizes; retain fixed mode.
+9. Cross-platform acceptance: full tests/race/vet/build and Windows PowerShell/pwsh/macOS menu tests; live small trial, medium trial, interrupted/power-loss recovery, then full-drive migration.
+
+No large live migration acceptance claim based solely on mocks or CI. Gates require no duplicate destination creation, no missing folders, no unreported omission, preserved cache bounds and correct restart behavior.
+
+References (checked 2026-11-02):
+- https://developers.google.com/workspace/drive/api/guides/folder
+- https://developers.google.com/workspace/drive/api/guides/create-file
+- https://developers.google.com/workspace/drive/api/guides/manage-uploads
+- https://developers.google.com/workspace/drive/api/guides/api-specific-auth
+- https://developers.google.com/workspace/drive/api/guides/limits
+- https://developers.google.com/workspace/drive/api/reference/rest/v3/files
+- https://developers.google.com/identity/protocols/oauth2#expiration
+- https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app
+- https://learn.microsoft.com/en-us/graph/api/resources/package?view=graph-rest-1.0

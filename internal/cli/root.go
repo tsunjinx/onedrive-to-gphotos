@@ -20,6 +20,7 @@ Direction: OneDrive -> Google Photos. Source files are kept.
 
 Usage:
   od2gp menu
+  od2gp drive menu
   od2gp help
   od2gp version
   od2gp setup
@@ -100,6 +101,9 @@ func RunContext(ctx context.Context, args []string, input io.Reader, stdout, std
 	if configErr != nil {
 		fmt.Fprintln(stderr, configErr)
 		return 1
+	}
+	if len(args) > 0 && args[0] == "drive" {
+		return driveCommand(ctx, args[1:], input, stdout, stderr, configEnv, root)
 	}
 	if len(args) > 0 {
 		switch args[0] {
