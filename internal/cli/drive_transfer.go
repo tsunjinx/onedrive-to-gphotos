@@ -62,8 +62,21 @@ func (a *menuApp) driveAccounts(root string, getenv func(string) string) {
 		fmt.Fprintln(a.errOut, e)
 		return
 	}
+	if saved.DriveSetupStep > 0 {
+		choice, err := a.ask(a.dt("Saved setup: c = continue, r = review all permission links, b = back", "Thiết lập đã lưu: c = tiếp tục, r = xem lại link cấp quyền, b = quay lại"), "c")
+		if err != nil || choice == "b" {
+			return
+		}
+		if choice == "r" {
+			saved.DriveSetupStep = 0
+			if err := settings.Save(root, saved); err != nil {
+				fmt.Fprintln(a.errOut, err)
+				return
+			}
+		}
+	}
 	steps := []struct{ url, en, vi string }{
-		{microsoftConsole, "Microsoft: App registrations → your app (or New registration). Support personal Microsoft accounts. Authentication → Mobile/Desktop → http://localhost. API permissions → Microsoft Graph → Delegated → Files.Read. No OneDrive write permission is needed.", "Microsoft: App registrations → chọn/tạo app, hỗ trợ tài khoản Microsoft cá nhân. Authentication → Mobile/Desktop → http://localhost. API permissions → Microsoft Graph → Delegated → Files.Read (chỉ đọc)."},
+		{microsoftConsole, "Microsoft: using the configured public app? Choose Done to keep it; no Azure subscription or new registration is needed. For your own client: App registrations → your app (or New registration). Support personal Microsoft accounts. Authentication → Mobile/Desktop → http://localhost. API permissions → Microsoft Graph → Delegated → Files.Read. No OneDrive write permission is needed.", "Microsoft: dùng app công khai đã cấu hình thì chọn d để giữ, không cần Azure subscription hay tạo app mới. Nếu dùng client riêng: App registrations → chọn/tạo app, hỗ trợ tài khoản Microsoft cá nhân. Authentication → Mobile/Desktop → http://localhost. API permissions → Microsoft Graph → Delegated → Files.Read (chỉ đọc)."},
 		{"https://console.cloud.google.com/apis/library/drive.googleapis.com", "Google: select your project and Enable Google Drive API.", "Google: chọn đúng project rồi Enable Google Drive API."},
 		{"https://console.cloud.google.com/auth/audience", "Google Auth Platform: configure Branding/Audience; personal accounts use External. If Testing, add your destination email as a test user. Drive refresh tokens in External/Testing normally expire after 7 days; review publishing status for long jobs. Production does not guarantee permanent credentials.", "Google Auth Platform: cấu hình Branding/Audience; tài khoản cá nhân chọn External. Nếu Testing, thêm email đích vào test users. Token Drive ở External/Testing thường hết hạn sau 7 ngày; kiểm tra publishing trước khi chạy dài ngày."},
 		{googleConsole, "Google: create OAuth client → Desktop app, download JSON. Required Drive scope: https://www.googleapis.com/auth/drive.file (app-authorized destination files). This is separate from Photos login.", "Google: tạo OAuth client → Desktop app, tải JSON. Quyền Drive: https://www.googleapis.com/auth/drive.file (file/thư mục được cấp cho app). Đăng nhập riêng với Photos."},
@@ -111,7 +124,11 @@ func (a *menuApp) driveAccounts(root string, getenv func(string) string) {
 	if a.execute([]string{"setup", "microsoft", id}, a.out) != 0 {
 		return
 	}
-	file, e := a.ask(a.dt("Google Desktop JSON path", "Đường dẫn Google Desktop JSON"), saved.DriveClientFile)
+	clientFile := saved.DriveClientFile
+	if clientFile == "" {
+		clientFile = saved.GoogleClientFile
+	}
+	file, e := a.ask(a.dt("Google Desktop JSON path", "Đường dẫn Google Desktop JSON"), clientFile)
 	if e != nil {
 		return
 	}
