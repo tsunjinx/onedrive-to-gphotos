@@ -106,3 +106,17 @@ Live account linking, native desktop behavior, sustained throughput and actual p
 - `insufficientPermissions`: reconnect Google Drive and grant the requested `drive.file` scope. Photos-only consent is insufficient.
 - Revoked/expired consent: use Sign out and Link accounts for the same original account. Saved jobs cannot be resumed into a different account.
 - `storageQuotaExceeded`: resolve destination storage before Continue. The paid plan alone does not prove available capacity.
+
+## Unsupported objects during inventory
+
+A OneNote notebook/package or a file with missing size stops inventory. This is not an upload failure: an incomplete inventory cannot start uploading. The saved job and downloaded root-delta pages remain available.
+
+To omit one object explicitly, open **11 → Continue → select the original job → 2 (Exclude a specific source path)**. Enter its complete OneDrive path, such as `/Documents/Notebook`. Only this path and its descendants are excluded; similarly named siblings remain included. The containing folder is retained. The choice is saved and disclosed in progress and reports, with unknown file count/size; the migration cannot claim to cover that content.
+
+CLI equivalent (repeat `--exclude-path` for additional paths):
+
+```text
+od2gp drive resume --job JOB_ID --exclude-path "/Documents/Notebook"
+```
+
+Exclusions can only be added while inventory is incomplete and no transfer activity has occurred. Accepted/completed jobs retain their original scope. Root delta pages already saved under the same job/source binding are reused; the local inventory is rebuilt from those pages. Selected-folder scans use the same exclusions during both discovery and final verification. Excluding a OneNote object does not export or convert it; handle its contents separately if needed.

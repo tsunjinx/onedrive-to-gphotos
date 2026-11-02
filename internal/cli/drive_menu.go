@@ -64,6 +64,7 @@ func (a *menuApp) savedDriveAction(root, choice string) {
 		return
 	}
 	var ids []string
+	var jobs []drivemigration.Meta
 	for _, entry := range entries {
 		if !entry.IsDir() || !migration.ValidID(entry.Name()) {
 			continue
@@ -85,6 +86,7 @@ func (a *menuApp) savedDriveAction(root, choice string) {
 			continue
 		}
 		ids = append(ids, id)
+		jobs = append(jobs, m)
 		fmt.Fprintf(a.out, "%d) /%s → /%s (%s)\n", len(ids), m.Folder, m.RootName, id[:8])
 	}
 	if len(ids) == 0 {
@@ -101,7 +103,10 @@ func (a *menuApp) savedDriveAction(root, choice string) {
 	id := ids[n-1]
 	switch choice {
 	case "4":
-		a.execute(a.driveRunArgs(id), a.out)
+		args, ok := a.driveResumeScopeArgs(jobs[n-1])
+		if ok {
+			a.execute(args, a.out)
+		}
 	case "5":
 		a.execute([]string{"drive", "status", "--job", id}, a.out)
 	case "6":
@@ -169,4 +174,29 @@ func (a *menuApp) driveLogout() {
 		return
 	}
 	a.execute([]string{"auth", "logout", provider}, a.out)
+}
+
+func (a *menuApp) driveResumeScopeArgs(m drivemigration.Meta) ([]string, bool) {
+	args := a.driveRunArgs(m.ID)
+	if m.InventoryComplete {
+		return args, true
+	}
+	fmt.Fprintln(a.out, a.dt("Inventory is incomplete.\n1) Continue the saved scope\n2) Exclude a specific source path, then continue\n0) Back", "Inventory chưa hoàn tất.\n1) Tiếp tục phạm vi đã lưu\n2) Loại trừ một đường dẫn nguồn rồi tiếp tục\n0) Quay lại"))
+	choice, err := a.ask("Choose", "1")
+	if err != nil {
+		return nil, false
+	}
+	switch choice {
+	case "1":
+		return args, true
+	case "2":
+		fmt.Fprintln(a.out, a.dt("Enter the full OneDrive path, including the selected source folder. The path and all descendants will NOT be copied; count and size remain unknown. The choice is saved with this job. Cached root delta pages are retained.", "Nhập đường dẫn đầy đủ trong OneDrive, bao gồm thư mục nguồn đã chọn. Mục này và toàn bộ nội dung bên trong sẽ KHÔNG được chép; số file và dung lượng chưa xác định. Lựa chọn được lưu vào job. Các trang delta gốc đã tải được giữ lại."))
+		p, err := a.ask(a.dt("Source path to exclude", "Đường dẫn nguồn cần loại trừ"), "")
+		if err != nil || strings.TrimSpace(p) == "" {
+			return nil, false
+		}
+		return append(args, "--exclude-path", p), true
+	default:
+		return nil, false
+	}
 }

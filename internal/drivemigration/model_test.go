@@ -49,3 +49,34 @@ func TestDiscoverKeepsEmptyFoldersAndSkipsOnlyConfirmedZero(t *testing.T) {
 		}
 	}
 }
+
+func TestExclusionsArePersistedOnlyBeforeUpload(t *testing.T) {
+	s, e := journal.Open(filepath.Join(t.TempDir(), "progress.db"), make([]byte, 32), true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	m := Meta{Kind: Kind, ID: "job", Folder: "Documents"}
+	for _, p := range []string{"/", "../bad", "Pictures/other", "Documents"} {
+		if AddExclusions(s, &m, []string{p}) == nil {
+			t.Fatalf("invalid exclusion accepted: %s", p)
+		}
+	}
+	if e := AddExclusions(s, &m, []string{"/Documents/Notebook"}); e != nil {
+		t.Fatal(e)
+	}
+	var saved Meta
+	if e := s.Load(0, &saved); e != nil || len(saved.ExcludedPaths) != 1 || saved.ExcludedPaths[0] != "Documents/Notebook" {
+		t.Fatalf("not persisted: %+v %v", saved, e)
+	}
+	if e := s.Save(1, "pending", Node{State: "pending", TargetID: "already-generated"}); e != nil {
+		t.Fatal(e)
+	}
+	if AddExclusions(s, &m, []string{"Documents/other"}) == nil {
+		t.Fatal("changed scope after destination activity")
+	}
+	m.InventoryComplete = true
+	if AddExclusions(s, &m, []string{"Documents/other"}) == nil {
+		t.Fatal("changed complete inventory")
+	}
+}

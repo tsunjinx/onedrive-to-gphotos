@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"od2gp/internal/drivemigration"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDriveUsageFailsBeforeAuthentication(t *testing.T) {
@@ -60,5 +62,46 @@ func TestDriveWorkersAreSeparateFromPhotos(t *testing.T) {
 	args = a.driveRunArgs(strings.Repeat("1", 32))
 	if args[len(args)-1] != "2" || a.options.Workers != 3 {
 		t.Fatal("Drive setting changed Photos workers")
+	}
+}
+
+func TestDriveReportDisclosesPathExclusions(t *testing.T) {
+	s, e := journal.Open(filepath.Join(t.TempDir(), "job.db"), make([]byte, 32), true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	m := drivemigration.Meta{ExcludedPaths: []string{"Documents/Notebook"}, VerifiedAt: time.Now()}
+	for _, format := range []string{"json", "csv"} {
+		var out bytes.Buffer
+		if e := driveReport(s, m, format, &out); e != nil {
+			t.Fatal(e)
+		}
+		for _, text := range []string{"/Documents/Notebook", "accepted_exclusion", "count and size unknown"} {
+			if !strings.Contains(out.String(), text) {
+				t.Fatalf("exclusion missing from %s: %s", format, out.String())
+			}
+		}
+		if format == "csv" && !strings.Contains(out.String(), "job_verified_with_exclusions") {
+			t.Fatal("claimed full coverage")
+		}
+	}
+}
+func TestDriveResumeMenuExcludesOnlyOnExplicitSelection(t *testing.T) {
+	m := drivemigration.Meta{ID: strings.Repeat("1", 32)}
+	for _, tc := range []struct {
+		input    string
+		excludes bool
+	}{{"1\n", false}, {"2\n/Documents/Notebook\n", true}} {
+		var out bytes.Buffer
+		a := menuApp{ctx: context.Background(), out: &out, input: bufio.NewReader(strings.NewReader(tc.input)), options: defaultTransferOptions()}
+		args, ok := a.driveResumeScopeArgs(m)
+		if !ok {
+			t.Fatal("menu cancelled unexpectedly")
+		}
+		got := strings.Contains(strings.Join(args, "|"), "--exclude-path|/Documents/Notebook")
+		if got != tc.excludes {
+			t.Fatalf("wrong exclusion args %v", args)
+		}
 	}
 }

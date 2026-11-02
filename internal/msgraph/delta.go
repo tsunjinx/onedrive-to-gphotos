@@ -157,16 +157,19 @@ func (c Client) walkCheckpoint(ctx context.Context, folder string, store *journa
 		if present(parent.Deleted) {
 			return "", false, errors.New("live delta item has a deleted parent; inventory incomplete")
 		}
-		if !present(parent.Root) && parent.Folder == nil {
-			return "", false, errors.New("delta parent is not a folder")
-		}
 		prefix, excluded, err := resolve(parent, chain)
 		if err != nil || excluded {
 			return "", excluded, err
 		}
+		if !present(parent.Root) && parent.Folder == nil {
+			return "", false, errors.New("delta parent is not a folder")
+		}
 		name := item.Name
 		if prefix != "" {
 			name = prefix + "/" + name
+		}
+		if c.excluded(name) {
+			return "", true, nil
 		}
 		if name == "Personal Vault" {
 			if c.ExcludePersonalVault {

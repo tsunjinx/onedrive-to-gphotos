@@ -26,6 +26,7 @@ type Client struct {
 	HTTP                 *http.Client
 	Drive                string
 	ExcludePersonalVault bool
+	ExcludedPaths        []string // Drive-relative exact paths, including their descendants.
 	retryWait            func(context.Context, time.Duration) error
 	downloadTransport    http.RoundTripper
 	retryGate            func(context.Context) error
@@ -396,6 +397,9 @@ func (c Client) list(ctx context.Context, folder string, recursive, folders bool
 					return errors.New("Graph inventory contains an unsafe or unidentified source item")
 				}
 				name := path.Join(dir.prefix, r.Name)
+				if c.excluded(path.Join(folder, name)) {
+					continue
+				}
 				if folder == "" && name == "Personal Vault" {
 					if c.ExcludePersonalVault {
 						continue
@@ -554,4 +558,14 @@ func (c Client) Read(ctx context.Context, name string, offset int64, out io.Writ
 		}
 	}
 
+}
+
+// excluded compares complete path components; similarly named siblings remain in scope.
+func (c Client) excluded(name string) bool {
+	for _, excluded := range c.ExcludedPaths {
+		if name == excluded || strings.HasPrefix(name, excluded+"/") {
+			return true
+		}
+	}
+	return false
 }

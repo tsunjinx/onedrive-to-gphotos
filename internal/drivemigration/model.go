@@ -19,6 +19,7 @@ import (
 const Kind = "onedrive-google-drive-v1"
 
 type Meta struct {
+	ExcludedPaths                                                                                           []string
 	RootParentID                                                                                            string
 	VerifiedAt                                                                                              time.Time
 	FinalError                                                                                              string
@@ -179,4 +180,46 @@ func Load(s *journal.Store) (map[string]Node, error) {
 		nodes[n.Source.Path] = n
 	}
 	return nodes, nil
+}
+
+// AddExclusions changes scope only before the upload inventory has been accepted.
+// Raw delta pages are unfiltered and remain reusable with the same source binding.
+func AddExclusions(store *journal.Store, m *Meta, paths []string) error {
+	var added []string
+	known := make(map[string]bool, len(m.ExcludedPaths)+len(paths))
+	for _, p := range m.ExcludedPaths {
+		known[p] = true
+	}
+	for _, p := range paths {
+		p = strings.Trim(p, "/")
+		if !clean(p) || (m.Folder != "" && !strings.HasPrefix(p, m.Folder+"/")) {
+			return errors.New("exclusion must be a path inside the saved source folder")
+		}
+		if !known[p] {
+			known[p] = true
+			added = append(added, p)
+		}
+	}
+	if len(added) == 0 {
+		return nil
+	}
+	if m.InventoryComplete {
+		return errors.New("cannot change exclusions after inventory completes; keep this job's original scope")
+	}
+	nodes, err := Load(store)
+	if err != nil {
+		return err
+	}
+	for _, n := range nodes {
+		if n.TargetID != "" || n.Session != "" || n.Hash != "" || (n.State != "pending" && n.State != "skipped") {
+			return errors.New("cannot change exclusions after transfer activity")
+		}
+	}
+	next := *m
+	next.ExcludedPaths = append(append([]string{}, m.ExcludedPaths...), added...)
+	if err := store.Save(0, "drive-job", next); err != nil {
+		return err
+	}
+	*m = next
+	return nil
 }

@@ -156,3 +156,5 @@ Implementation and automated verification are recorded below. Live account/deskt
 Google Drive handoff: use [docs/google-drive.md](../docs/google-drive.md) on the other machine. GD13 documentation is written; fresh-machine walkthrough and full-drive approval depend on GD12 and remain incomplete. Gate C automated CI passed; Gate A (live accounts/minimal real transfer), native desktop consent and GD12 are not waived.
 
 - [x] GD13a: Setup/run/recovery instructions and target-machine acceptance checklist are in docs/google-drive.md. GD13 remains open for the fresh-machine walkthrough and full-rollout decision after GD12.
+
+- [x] Drive inventory recovery: explicit persisted path/subtree exclusions for unsupported objects (including OneNote packages); incomplete-job Continue menu, report disclosure, unchanged raw-delta checkpoint reuse, and refusal to change scope after transfer activity. Live target-machine validation remains part of GD12.

@@ -43,11 +43,22 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 	folder := fs.String("source", "/", "OneDrive folder")
 	name := fs.String("name", "OneDrive Backup", "new destination root name")
 	cache := fs.Int64("cache-gib", 30, "encrypted staging GiB")
+	var exclusions driveExcludedPaths
+	fs.Var(&exclusions, "exclude-path", "explicitly omit a drive-relative path and its descendants; repeatable, incomplete jobs only")
 	vault := fs.Bool("exclude-personal-vault", false, "explicitly omit Personal Vault")
 	workers := fs.String("workers", "auto", "1-8 or auto")
 	yes := fs.Bool("yes", false, "confirm upload")
 	format := fs.String("format", "json", "report json or csv")
 	if fs.Parse(args[1:]) != nil || fs.NArg() != 0 {
+		return 2
+	}
+	for _, p := range exclusions {
+		trimmed := strings.Trim(p, "/")
+		if trimmed == "" || path.Clean(trimmed) != trimmed || trimmed == ".." || strings.HasPrefix(trimmed, "../") || strings.ContainsAny(trimmed, "\\\x00") {
+			return 2
+		}
+	}
+	if len(exclusions) > 0 && (command == "status" || command == "report" || command == "verify") {
 		return 2
 	}
 	if command != "plan" && !migration.ValidID(*id) {
@@ -189,6 +200,13 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 		}
 		source.Drive = m.DriveID
 	}
+	if e = drivemigration.AddExclusions(store, &m, exclusions); e != nil {
+		return fail(e)
+	}
+	source.ExcludedPaths = m.ExcludedPaths
+	for _, p := range m.ExcludedPaths {
+		fmt.Fprintln(errOut, drivePathExclusionNotice(p))
+	}
 	source.ExcludePersonalVault = m.ExcludeVault
 	if m.ExcludeVault {
 		fmt.Fprintln(errOut, vaultExclusionNotice)
@@ -323,6 +341,9 @@ func driveSummary(s *journal.Store, m drivemigration.Meta, out io.Writer) error 
 		}
 	}
 	fmt.Fprintf(out, "Files: %d; folders (including destination root): %d; empty files excluded: %d\nEligible: %.3f GiB; completed: %.3f GiB; largest file: %.3f GiB; cache cap: %.1f GiB\n", files, folders, empty, float64(total)/(1<<30), float64(done)/(1<<30), float64(largest)/(1<<30), float64(m.CacheBytes)/(1<<30))
+	for _, p := range m.ExcludedPaths {
+		fmt.Fprintln(out, drivePathExclusionNotice(p))
+	}
 	fmt.Fprintf(out, "Final verification: %s; issue: %s\n", m.VerifiedAt.Format(time.RFC3339), m.FinalError)
 	if m.ExcludeVault {
 		fmt.Fprintln(out, vaultExclusionNotice)
@@ -348,6 +369,9 @@ func driveReport(s *journal.Store, m drivemigration.Meta, format string, out io.
 	var rows []driveReportRow
 	for _, n := range nodes {
 		rows = append(rows, driveReportRow{n.Source.Path, n.Source.IsDir, n.Source.Size, n.State, n.TargetID, n.Reason, n.Verification})
+	}
+	for _, p := range m.ExcludedPaths {
+		rows = append(rows, driveReportRow{Source: "/" + p, Bytes: -1, State: "accepted_exclusion", Reason: "explicit_path_exclusion; contents not copied; count and size unknown"})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Source < rows[j].Source })
 	if format == "json" {
@@ -378,7 +402,7 @@ func driveReport(s *journal.Store, m drivemigration.Meta, format string, out io.
 	status := "job_unverified"
 	if !m.VerifiedAt.IsZero() {
 		status = "job_verified"
-		if m.ExcludeVault {
+		if m.ExcludeVault || len(m.ExcludedPaths) > 0 {
 			status = "job_verified_with_exclusions"
 		}
 	}
@@ -387,4 +411,12 @@ func driveReport(s *journal.Store, m drivemigration.Meta, format string, out io.
 	}
 	w.Flush()
 	return w.Error()
+}
+
+type driveExcludedPaths []string
+
+func (p *driveExcludedPaths) String() string     { return strings.Join(*p, ", ") }
+func (p *driveExcludedPaths) Set(s string) error { *p = append(*p, s); return nil }
+func drivePathExclusionNotice(p string) string {
+	return fmt.Sprintf("Excluded: /%s and its descendants. Not copied; file count and size unknown. This job does not cover this path.", p)
 }
