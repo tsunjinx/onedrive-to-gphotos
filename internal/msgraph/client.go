@@ -26,6 +26,7 @@ type Client struct {
 	HTTP                 *http.Client
 	Drive                string
 	ExcludePersonalVault bool
+	SkipPackages         bool     // Drive migration omits package contents, reporting the package root.
 	ExcludedPaths        []string // Drive-relative exact paths, including their descendants.
 	retryWait            func(context.Context, time.Duration) error
 	downloadTransport    http.RoundTripper
@@ -62,7 +63,7 @@ func (r resource) item(name string) onedrive.Item {
 	if r.Size != nil {
 		size = *r.Size
 	}
-	item := onedrive.Item{ID: r.ID, Name: r.Name, Path: name, Size: size, ModTime: r.Modified, IsDir: r.Folder != nil && r.Package == nil, Hashes: map[string]string{}}
+	item := onedrive.Item{OneDrivePackage: r.Package != nil, ID: r.ID, Name: r.Name, Path: name, Size: size, ModTime: r.Modified, IsDir: r.Folder != nil && r.Package == nil, Hashes: map[string]string{}}
 	if r.Image != nil {
 		item.Width = r.Image.Width
 		item.Height = r.Image.Height
@@ -413,6 +414,14 @@ func (c Client) list(ctx context.Context, folder string, recursive, folders bool
 					return errors.New("Graph inventory returned a repeated item; restart discovery rather than guessing")
 				}
 				seen[r.ID] = true
+				if folders && c.SkipPackages && r.Package != nil {
+					item := r.item(name)
+					item.Size = -1
+					if err := visit(item); err != nil {
+						return err
+					}
+					continue
+				}
 				if r.File != nil && r.ETag == "" && r.CTag == "" {
 					return errors.New("Graph omitted file version metadata; scan is incomplete")
 				}

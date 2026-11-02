@@ -161,6 +161,9 @@ func (c Client) walkCheckpoint(ctx context.Context, folder string, store *journa
 		if err != nil || excluded {
 			return "", excluded, err
 		}
+		if folders && c.SkipPackages && parent.Package != nil {
+			return "", true, nil
+		}
 		if !present(parent.Root) && parent.Folder == nil {
 			return "", false, errors.New("delta parent is not a folder")
 		}
@@ -193,6 +196,11 @@ func (c Client) walkCheckpoint(ctx context.Context, folder string, store *journa
 		}
 		if present(item.Root) {
 			return nil
+		}
+		if folders && c.SkipPackages && item.Package != nil {
+			special := item.item(name)
+			special.Size = -1
+			return visit(special)
 		}
 		if item.Folder != nil && item.Package == nil {
 			if folders {

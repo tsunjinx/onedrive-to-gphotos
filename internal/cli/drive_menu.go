@@ -181,7 +181,7 @@ func (a *menuApp) driveResumeScopeArgs(m drivemigration.Meta) ([]string, bool) {
 	if m.InventoryComplete {
 		return args, true
 	}
-	fmt.Fprintln(a.out, a.dt("Inventory is incomplete.\n1) Continue the saved scope\n2) Exclude a specific source path, then continue\n0) Back", "Inventory chưa hoàn tất.\n1) Tiếp tục phạm vi đã lưu\n2) Loại trừ một đường dẫn nguồn rồi tiếp tục\n0) Quay lại"))
+	fmt.Fprintln(a.out, a.dt("Inventory is incomplete. OneDrive package objects are automatically skipped and reported.\n1) Continue the saved scope\n2) Exclude a specific source path, then continue\n0) Back", "Inventory chưa hoàn tất. Các đối tượng package của OneDrive được tự bỏ qua và ghi báo cáo.\n1) Tiếp tục phạm vi đã lưu\n2) Loại trừ một đường dẫn nguồn rồi tiếp tục\n0) Quay lại"))
 	choice, err := a.ask("Choose", "1")
 	if err != nil {
 		return nil, false

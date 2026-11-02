@@ -488,3 +488,33 @@ func TestAppRootLearnsParentWithoutUnrelatedRootAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestPackageSkipSurvivesTransferVerificationAndResume(t *testing.T) {
+	e, d := engineFixture(t)
+	src := e.Source.(fullSource)
+	src.items = append(src.items, onedrive.Item{ID: "notebook", Name: "Notebook", Path: "Rỗng/Notebook", Size: -1, OneDrivePackage: true})
+	e.Source = src
+	e.Meta.InventoryComplete = false
+	e.Meta.SkipOneDrivePackages = true
+	if err := Discover(context.Background(), src, e.Store, e.Meta, nil); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := e.Run(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.Verify(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(d.files) != 3 || d.next != 3 {
+		t.Fatalf("created destination object for package: %+v", d.files)
+	}
+	nodes, err := Load(e.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodes["Rỗng/Notebook"].Reason != SkippedPackage {
+		t.Fatal("skip lost on resume")
+	}
+}

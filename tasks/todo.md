@@ -158,3 +158,5 @@ Google Drive handoff: use [docs/google-drive.md](../docs/google-drive.md) on the
 - [x] GD13a: Setup/run/recovery instructions and target-machine acceptance checklist are in docs/google-drive.md. GD13 remains open for the fresh-machine walkthrough and full-rollout decision after GD12.
 
 - [x] Drive inventory recovery: explicit persisted path/subtree exclusions for unsupported objects (including OneNote packages); incomplete-job Continue menu, report disclosure, unchanged raw-delta checkpoint reuse, and refusal to change scope after transfer activity. Live target-machine validation remains part of GD12.
+
+- [x] Automatic Drive package handling: identify Microsoft Graph package objects by metadata, record skipped roots/unknown contents, retain ordinary files and special folders, apply the same policy in discovery and verification. Old incomplete jobs adopt the policy using existing delta pages; completed job scope is retained.

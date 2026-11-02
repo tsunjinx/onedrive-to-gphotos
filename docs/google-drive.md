@@ -109,9 +109,11 @@ Live account linking, native desktop behavior, sustained throughput and actual p
 
 ## Unsupported objects during inventory
 
-A OneNote notebook/package or a file with missing size stops inventory. This is not an upload failure: an incomplete inventory cannot start uploading. The saved job and downloaded root-delta pages remain available.
+Microsoft Graph `package` objects (such as OneNote notebooks) are automatically skipped in new or incomplete Drive jobs. Their root paths are recorded as `skipped_onedrive_package`; their contents are not copied and their file count/size remain unknown. Recognition uses the package metadata, never filenames or extensions. Ordinary Documents/Pictures/Camera Roll folders and Office files remain in scope. [Microsoft package documentation](https://learn.microsoft.com/en-us/graph/api/resources/package?view=graph-rest-1.0).
 
-To omit one object explicitly, open **11 → Continue → select the original job → 2 (Exclude a specific source path)**. Enter its complete OneDrive path, such as `/Documents/Notebook`. Only this path and its descendants are excluded; similarly named siblings remain included. The containing folder is retained. The choice is saved and disclosed in progress and reports, with unknown file count/size; the migration cannot claim to cover that content.
+An ordinary file with missing size, an unknown non-package object or an inaccessible shared shortcut still stops inventory. This is not an upload failure: an incomplete inventory cannot start uploading. The saved job and downloaded root-delta pages remain available.
+
+For other objects you explicitly decide to omit, open **11 → Continue → select the original job → 2 (Exclude a specific source path)**. Enter its complete OneDrive path, such as `/Documents/Notebook`. Only this path and its descendants are excluded; similarly named siblings remain included. The containing folder is retained. The choice is saved and disclosed in progress and reports, with unknown file count/size; the migration cannot claim to cover that content.
 
 CLI equivalent (repeat `--exclude-path` for additional paths):
 

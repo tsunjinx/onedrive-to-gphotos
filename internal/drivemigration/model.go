@@ -16,9 +16,12 @@ import (
 	"time"
 )
 
+const SkippedPackage = "skipped_onedrive_package"
+
 const Kind = "onedrive-google-drive-v1"
 
 type Meta struct {
+	SkipOneDrivePackages                                                                                    bool
 	ExcludedPaths                                                                                           []string
 	RootParentID                                                                                            string
 	VerifiedAt                                                                                              time.Time
@@ -99,7 +102,14 @@ func Discover(ctx context.Context, s Source, store *journal.Store, m *Meta, prog
 		if n.Parent == "." {
 			n.Parent = ""
 		}
-		if !item.IsDir {
+		if item.OneDrivePackage {
+			if !m.SkipOneDrivePackages {
+				return fmt.Errorf("OneDrive package outside accepted policy: %q", item.Path)
+			}
+			n.State = "skipped"
+			n.Reason = SkippedPackage
+			n.Source.Size = -1
+		} else if !item.IsDir {
 			if item.Size < 0 {
 				return fmt.Errorf("unknown source size: %q", item.Path)
 			}

@@ -80,3 +80,27 @@ func TestExclusionsArePersistedOnlyBeforeUpload(t *testing.T) {
 		t.Fatal("changed complete inventory")
 	}
 }
+
+func TestDiscoverRecordsAutoSkippedPackagesWithoutInventingFolder(t *testing.T) {
+	s, e := journal.Open(filepath.Join(t.TempDir(), "job.db"), make([]byte, 32), true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	m := Meta{Kind: Kind, ID: "job", RootName: "Backup", SkipOneDrivePackages: true, CacheBytes: 1 << 30}
+	src := sourceFake{items: []onedrive.Item{{ID: "d", Name: "Documents", Path: "Documents", IsDir: true}, {ID: "n", Name: "Notebook", Path: "Documents/Notebook", Size: -1, OneDrivePackage: true}, {ID: "f", Name: "report.docx", Path: "Documents/report.docx", Size: 5, ModTime: "version"}}}
+	if e := Discover(context.Background(), src, s, &m, nil); e != nil {
+		t.Fatal(e)
+	}
+	nodes, e := Load(s)
+	if e != nil {
+		t.Fatal(e)
+	}
+	n := nodes["Documents/Notebook"]
+	if n.State != "skipped" || n.Reason != SkippedPackage || n.Source.IsDir || n.Source.Size != -1 || n.TargetID != "" {
+		t.Fatalf("package treated as ordinary data: %+v", n)
+	}
+	if nodes["Documents"].State != "pending" || nodes["Documents/report.docx"].State != "pending" || !m.InventoryComplete {
+		t.Fatal("ordinary data not retained")
+	}
+}

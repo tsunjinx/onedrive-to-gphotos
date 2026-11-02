@@ -203,6 +203,15 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 	if e = drivemigration.AddExclusions(store, &m, exclusions); e != nil {
 		return fail(e)
 	}
+	// Incomplete inventories have not started transfer. Adopt the automatic
+	// non-file package policy without changing the raw delta checkpoint binding.
+	if !m.InventoryComplete && !m.SkipOneDrivePackages {
+		m.SkipOneDrivePackages = true
+		if e = store.Save(0, "drive-job", m); e != nil {
+			return fail(e)
+		}
+	}
+	source.SkipPackages = m.SkipOneDrivePackages
 	source.ExcludedPaths = m.ExcludedPaths
 	for _, p := range m.ExcludedPaths {
 		fmt.Fprintln(errOut, drivePathExclusionNotice(p))
@@ -322,9 +331,13 @@ func driveSummary(s *journal.Store, m drivemigration.Meta, out io.Writer) error 
 	if err != nil {
 		return err
 	}
-	files, folders, empty := 0, 0, 0
+	files, folders, empty, packages := 0, 0, 0, 0
 	var total, done, largest int64
 	for _, n := range nodes {
+		if n.State == "skipped" && n.Reason == drivemigration.SkippedPackage {
+			packages++
+			continue
+		}
 		if n.Source.IsDir {
 			folders++
 			continue
@@ -341,6 +354,9 @@ func driveSummary(s *journal.Store, m drivemigration.Meta, out io.Writer) error 
 		}
 	}
 	fmt.Fprintf(out, "Files: %d; folders (including destination root): %d; empty files excluded: %d\nEligible: %.3f GiB; completed: %.3f GiB; largest file: %.3f GiB; cache cap: %.1f GiB\n", files, folders, empty, float64(total)/(1<<30), float64(done)/(1<<30), float64(largest)/(1<<30), float64(m.CacheBytes)/(1<<30))
+	if packages > 0 {
+		fmt.Fprintf(out, "Automatically skipped OneDrive packages: %d; their contents were not copied; count and size unknown.\n", packages)
+	}
 	for _, p := range m.ExcludedPaths {
 		fmt.Fprintln(out, drivePathExclusionNotice(p))
 	}
@@ -367,7 +383,12 @@ func driveReport(s *journal.Store, m drivemigration.Meta, format string, out io.
 		return e
 	}
 	var rows []driveReportRow
+	skippedPackages := false
 	for _, n := range nodes {
+		if n.Reason == drivemigration.SkippedPackage {
+			skippedPackages = true
+			n.Reason += "; package contents not copied; count and size unknown"
+		}
 		rows = append(rows, driveReportRow{n.Source.Path, n.Source.IsDir, n.Source.Size, n.State, n.TargetID, n.Reason, n.Verification})
 	}
 	for _, p := range m.ExcludedPaths {
@@ -402,7 +423,7 @@ func driveReport(s *journal.Store, m drivemigration.Meta, format string, out io.
 	status := "job_unverified"
 	if !m.VerifiedAt.IsZero() {
 		status = "job_verified"
-		if m.ExcludeVault || len(m.ExcludedPaths) > 0 {
+		if m.ExcludeVault || len(m.ExcludedPaths) > 0 || skippedPackages {
 			status = "job_verified_with_exclusions"
 		}
 	}

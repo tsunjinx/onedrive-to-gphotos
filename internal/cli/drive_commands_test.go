@@ -105,3 +105,24 @@ func TestDriveResumeMenuExcludesOnlyOnExplicitSelection(t *testing.T) {
 		}
 	}
 }
+
+func TestDriveReportShowsAutoSkippedPackages(t *testing.T) {
+	s, e := journal.Open(filepath.Join(t.TempDir(), "job.db"), make([]byte, 32), true)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer s.Close()
+	n := drivemigration.Node{Source: onedrive.Item{ID: "n", Path: "Documents/Notebook", Size: -1, OneDrivePackage: true}, State: "skipped", Reason: drivemigration.SkippedPackage}
+	if e := s.Save(1, n.State, n); e != nil {
+		t.Fatal(e)
+	}
+	var out bytes.Buffer
+	if e := driveReport(s, drivemigration.Meta{VerifiedAt: time.Now()}, "csv", &out); e != nil {
+		t.Fatal(e)
+	}
+	for _, value := range []string{"skipped_onedrive_package", "count and size unknown", "job_verified_with_exclusions"} {
+		if !strings.Contains(out.String(), value) {
+			t.Fatalf("missing %s", value)
+		}
+	}
+}

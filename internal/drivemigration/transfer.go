@@ -306,6 +306,13 @@ func (e *Engine) Verify(ctx context.Context) error {
 	}
 	seen := map[string]bool{}
 	err = e.Source.WalkTree(ctx, e.Meta.Folder, func(source onedrive.Item) error {
+		if source.OneDrivePackage {
+			n, ok := nodes[source.Path]
+			if !ok || n.State != "skipped" || n.Reason != SkippedPackage || n.Source.ID != source.ID {
+				return fmt.Errorf("source package changed at %q", source.Path)
+			}
+			return nil
+		}
 		if !source.IsDir && source.Size == 0 {
 			return nil
 		}
