@@ -45,7 +45,10 @@ func batchFixture(t *testing.T, capFiles int) (*Engine, *Meta, *batchingPhotos) 
 	batch := &batchingPhotos{concurrentPhotos: p}
 	e.Photos = batch
 	e.BatchSize = 50
-	e.BatchWait = time.Second
+	// Most fixtures assert one capacity/end batch, not elapsed-time flushing.
+	// Slow Windows runners must not split it before all fixture uploads finish.
+	// The timer-specific test sets its own short deadline.
+	e.BatchWait = time.Minute
 	return e, meta, batch
 }
 func TestBatchCommitFlushesAtCapacityAndEndWithoutDeadlock(t *testing.T) {
