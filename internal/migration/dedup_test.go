@@ -397,3 +397,28 @@ func TestDisableCrossJobDedup(t *testing.T) {
 		t.Fatalf("expected r1 to be discovered when deduplication is disabled, got %s", r1.State)
 	}
 }
+
+func TestCompletedMatchRequiresIdentityAndVersionEvidence(t *testing.T) {
+	ref := CompletedRef{SourceID: "source", MediaID: "media", Size: 3, ModTime: "time"}
+	src := onedrive.Item{ID: "source", Size: 3, ModTime: "time"}
+	idx := NewCompletedIndex()
+	idx.byID["source"] = ref
+	idx.byPath["file"] = ref
+	if _, ok := idx.Match(src, "file"); !ok {
+		t.Fatal("valid history rejected")
+	}
+	src.ID = "different"
+	if _, ok := idx.Match(src, "file"); ok {
+		t.Fatal("path bypassed source identity")
+	}
+	src.ID = "source"
+	src.ModTime = ""
+	if _, ok := idx.Match(src, "file"); ok {
+		t.Fatal("missing version treated as match")
+	}
+	ref.MediaID = ""
+	src.ModTime = "time"
+	if matchesRef(ref, src) {
+		t.Fatal("missing destination ID treated as completed")
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -236,6 +237,17 @@ func (e *Engine) Run(ctx context.Context, meta *Meta) error {
 			fmt.Fprintf(e.Progress, "[%d] %q: needs review; retained staging, continuing other files.\n", id, item.Path)
 		}
 	}
+	for _, id := range ids {
+		var item Item
+		if err := e.Store.Load(id, &item); err != nil {
+			return err
+		}
+		if item.State == "skipped" && strings.HasPrefix(item.Reason, "already completed in saved job ") {
+			if err := e.cleanupDeduplicated(id); err != nil {
+				return err
+			}
+		}
+	}
 	completedIdx := e.loadCompleted(meta)
 	if completedIdx != nil {
 		for _, id := range ids {
@@ -245,13 +257,13 @@ func (e *Engine) Run(ctx context.Context, meta *Meta) error {
 			}
 			if item.State == "discovered" || item.State == "downloading" || item.State == "staged" {
 				if ref, ok := completedIdx.Match(item.Source, item.Path); ok {
-					if item.State == "staged" {
-						cachePath := filepath.Join(e.Directory, fmt.Sprintf("stage-%d.bin", id))
-						_ = os.Remove(cachePath)
-					}
+
 					item.State = "skipped"
 					item.Reason = fmt.Sprintf("already completed in saved job %s", ref.JobID)
 					if err := e.Store.Save(id, item.State, &item); err != nil {
+						return err
+					}
+					if err := e.cleanupDeduplicated(id); err != nil {
 						return err
 					}
 				}
@@ -565,4 +577,19 @@ func (e *Engine) processing(ctx context.Context, id int64, item *Item) error {
 		item.State = "processing"
 	}
 	return e.Store.Save(id, item.State, item)
+}
+
+func (e *Engine) cleanupDeduplicated(id int64) error {
+	p := filepath.Join(e.Directory, fmt.Sprintf("stage-%d.bin", id))
+	info, err := os.Lstat(p)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return errors.New("unsafe deduplicated staging file")
+	}
+	return os.Remove(p)
 }

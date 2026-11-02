@@ -12,12 +12,13 @@ import (
 
 // CompletedRef represents a file confirmed completed in another migration job.
 type CompletedRef struct {
-	JobID   string
-	Path    string
-	Size    int64
-	ModTime string
-	Hashes  map[string]string
-	MediaID string
+	SourceID string
+	JobID    string
+	Path     string
+	Size     int64
+	ModTime  string
+	Hashes   map[string]string
+	MediaID  string
 }
 
 // CompletedIndex indexes completed files across sibling jobs by OneDrive item ID and normalized path.
@@ -47,13 +48,13 @@ func (idx *CompletedIndex) Size() int {
 
 // Match checks whether a source item matches a previously completed file.
 func (idx *CompletedIndex) Match(source onedrive.Item, fullPath string) (CompletedRef, bool) {
-	if idx == nil {
+	if idx == nil || source.ID == "" {
 		return CompletedRef{}, false
 	}
 	// Try matching by unique OneDrive Item ID first
 	if source.ID != "" {
 		if ref, ok := idx.byID[source.ID]; ok {
-			if matchesRef(ref, source) {
+			if ref.SourceID == source.ID && matchesRef(ref, source) {
 				return ref, true
 			}
 		}
@@ -62,7 +63,7 @@ func (idx *CompletedIndex) Match(source onedrive.Item, fullPath string) (Complet
 	normPath := normalizeDeduplicationPath(fullPath)
 	if normPath != "" {
 		if ref, ok := idx.byPath[normPath]; ok {
-			if matchesRef(ref, source) {
+			if ref.SourceID == source.ID && matchesRef(ref, source) {
 				return ref, true
 			}
 		}
@@ -75,6 +76,9 @@ func normalizeDeduplicationPath(p string) string {
 }
 
 func matchesRef(ref CompletedRef, source onedrive.Item) bool {
+	if ref.MediaID == "" || source.Size <= 0 || ref.Size <= 0 || source.ModTime == "" || ref.ModTime == "" {
+		return false
+	}
 	// If both have positive sizes and they differ, content has changed.
 	if source.Size > 0 && ref.Size > 0 && source.Size != ref.Size {
 		return false
@@ -85,7 +89,7 @@ func matchesRef(ref CompletedRef, source onedrive.Item) bool {
 	}
 	// If both have hashes, verify they do not conflict.
 	for k, v := range source.Hashes {
-		if refVal, ok := ref.Hashes[k]; ok && refVal != "" && v != "" && !strings.EqualFold(refVal, v) {
+		if refVal, ok := ref.Hashes[k]; ok && refVal != "" && v != "" && refVal != v {
 			return false
 		}
 	}
@@ -99,7 +103,7 @@ type KeyResolver func(id string) ([]byte, error)
 // populating an index of all completed files.
 func LoadCompletedIndex(jobsDir, currentJobID, driveID, googleSubject string, resolveKey KeyResolver) (*CompletedIndex, error) {
 	idx := NewCompletedIndex()
-	if jobsDir == "" {
+	if jobsDir == "" || driveID == "" || googleSubject == "" {
 		return idx, nil
 	}
 	entries, err := os.ReadDir(jobsDir)
@@ -134,11 +138,11 @@ func LoadCompletedIndex(jobsDir, currentJobID, driveID, googleSubject string, re
 			otherStore.Close()
 			continue
 		}
-		if driveID != "" && otherMeta.DriveID != "" && driveID != otherMeta.DriveID {
+		if otherMeta.DriveID != driveID {
 			otherStore.Close()
 			continue
 		}
-		if googleSubject != "" && otherMeta.GoogleSubject != "" && googleSubject != otherMeta.GoogleSubject {
+		if otherMeta.GoogleSubject != googleSubject {
 			otherStore.Close()
 			continue
 		}
@@ -148,12 +152,13 @@ func LoadCompletedIndex(jobsDir, currentJobID, driveID, googleSubject string, re
 				return nil
 			}
 			ref := CompletedRef{
-				JobID:   otherID,
-				Path:    item.Path,
-				Size:    item.Source.Size,
-				ModTime: item.Source.ModTime,
-				Hashes:  item.Source.Hashes,
-				MediaID: item.MediaID,
+				SourceID: item.Source.ID,
+				JobID:    otherID,
+				Path:     item.Path,
+				Size:     item.Source.Size,
+				ModTime:  item.Source.ModTime,
+				Hashes:   item.Source.Hashes,
+				MediaID:  item.MediaID,
 			}
 			if item.Source.ID != "" {
 				idx.byID[item.Source.ID] = ref
