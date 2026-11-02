@@ -21,8 +21,8 @@ Choose **11 — OneDrive → Google Drive**. In that submenu:
 4. **Continue / Tiếp tục**: choose the original Drive job after interruption. It retains its source drive and destination binding.
 5. **Progress / Tiến trình**: inspect saved states and final-verification status.
 6. **Export report / Xuất báo cáo**: save CSV without overwriting an existing local report. JSON is available from the CLI.
-8. **Sign out / Đăng xuất tài khoản**: remove a local account credential before linking a different account. Saved jobs still require their original account.
 7. **Transfer options / Tùy chọn truyền**: `auto` or a fixed 1–8 workers. These choices are separate from Photos settings.
+8. **Sign out / Đăng xuất tài khoản**: remove a local account credential before linking a different account. Saved jobs still require their original account.
 
 A new job creates a new dedicated destination root. Do not create another migration merely to resume an interrupted one. Existing destination files are not overwritten or merged by name.
 
@@ -97,3 +97,12 @@ On Windows replace `bash scripts/od2gp.sh` with `.\scripts\od2gp.ps1`. `--yes` s
 - Record results, representative checksums and final-verification status, then run a medium trial before the whole drive.
 
 Live account linking, native desktop behavior, sustained throughput and actual power-loss acceptance remain open until this evidence is supplied. These are not waived by passing CI.
+
+## Setup troubleshooting
+
+- Drive API `403 accessNotConfigured/serviceDisabled`: enable Drive API in the project belonging to the downloaded Desktop JSON, then Check connections again.
+- Browser `access_denied`: confirm the intended destination is an allowed test user if Testing; check organization policy when applicable.
+- Redirect mismatch: use a Desktop OAuth client JSON; Microsoft's desktop redirect must match the CLI loopback configuration. A Web client is not interchangeable.
+- `insufficientPermissions`: reconnect Google Drive and grant the requested `drive.file` scope. Photos-only consent is insufficient.
+- Revoked/expired consent: use Sign out and Link accounts for the same original account. Saved jobs cannot be resumed into a different account.
+- `storageQuotaExceeded`: resolve destination storage before Continue. The paid plan alone does not prove available capacity.

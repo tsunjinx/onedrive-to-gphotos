@@ -13,17 +13,18 @@ import (
 // A file-based ETA estimates the remaining transfer pass, not Google's video
 // processing time. Existing completed records do not inflate this run's rate.
 type transferDisplay struct {
-	columns  func() int
-	mu       sync.Mutex
-	out      io.Writer
-	store    *journal.Store
-	started  time.Time
-	baseline int
-	language string
-	last     string
-	stop     chan struct{}
-	done     chan struct{}
-	once     sync.Once
+	driveMetrics string
+	columns      func() int
+	mu           sync.Mutex
+	out          io.Writer
+	store        *journal.Store
+	started      time.Time
+	baseline     int
+	language     string
+	last         string
+	stop         chan struct{}
+	done         chan struct{}
+	once         sync.Once
 }
 
 func startTransferDisplay(store *journal.Store, out io.Writer, verbose bool, language string) (io.Writer, func()) {
@@ -117,6 +118,18 @@ func (d *transferDisplay) render(c map[string]int, now time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.last = progressLine(c, d.baseline, now.Sub(d.started))
+	if d.driveMetrics != "" {
+		base, elapsed, _ := strings.Cut(strings.ReplaceAll(d.last, " review:0", ""), " elapsed:")
+		parts := strings.Fields(d.driveMetrics)
+		metrics := d.driveMetrics
+		if d.columns != nil && d.columns() < 110 && len(parts) > 2 {
+			metrics = strings.Join(parts[:2], " ")
+			if len(parts) > 3 && parts[3] != "wait:0s" {
+				metrics += " " + parts[3]
+			}
+		}
+		d.last = base + " " + metrics + " t:" + elapsed
+	}
 	if d.language == "vi" {
 		d.last = strings.NewReplacer("left:", "còn:", "review:", "xem lại:", "elapsed:", "đã chạy:", "estimating", "đang tính").Replace(d.last)
 	}
@@ -134,6 +147,10 @@ func (d *transferDisplay) Write(p []byte) (int, error) {
 	defer d.mu.Unlock()
 	for _, line := range strings.Split(strings.TrimSpace(string(p)), "\n") {
 		line = strings.TrimSpace(line)
+		if metrics, ok := strings.CutPrefix(line, "Drive metrics: "); ok {
+			d.driveMetrics = metrics
+			continue
+		}
 		routine := strings.HasPrefix(line, "Queue batch:") || strings.HasPrefix(line, "Create batch:") || strings.HasPrefix(line, "Transfers:") || strings.HasPrefix(line, "Batch creation:") || strings.HasPrefix(line, "Transfer summary:") || strings.HasPrefix(line, "Drive progress:") || strings.HasPrefix(line, "Scanned ")
 		if strings.HasPrefix(line, "[") {
 			routine = routine || strings.Contains(line, "Uploaded ") || strings.Contains(line, "Upload session and bytes:") || strings.Contains(line, "Download and version checks:") || strings.Contains(line, "Resuming verified source download") || strings.Contains(line, "Source ignored the range") || strings.HasSuffix(line, ": discovered") || strings.HasSuffix(line, ": uploading") || strings.HasSuffix(line, ": staged") || strings.HasSuffix(line, ": uploaded") || strings.HasSuffix(line, ": downloading") || strings.HasSuffix(line, ": processing") || strings.HasSuffix(line, ": created")

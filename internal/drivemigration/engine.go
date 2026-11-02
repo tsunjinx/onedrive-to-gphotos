@@ -186,6 +186,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	defer ticker.Stop()
 	started := time.Now()
 	lastPrint := time.Time{}
+	lastMetrics := started
 	for {
 		if err := ctx.Err(); err != nil {
 			for count > 0 {
@@ -366,6 +367,9 @@ func (e *Engine) Run(ctx context.Context) error {
 
 			}
 		case <-ticker.C:
+			now := time.Now()
+			seconds := max(0.001, now.Sub(lastMetrics).Seconds())
+			lastMetrics = now
 			transferred := e.sent.Swap(0)
 			duration := time.Duration(e.latency.Swap(0))
 			requests := int(e.requests.Swap(0))
@@ -377,6 +381,22 @@ func (e *Engine) Run(ctx context.Context) error {
 					fmt.Fprintf(e.Progress, "Auto-workers: %d (%s)\n", limit, reason)
 				}
 			}
+			e.mu.Lock()
+			next := e.pause
+			e.mu.Unlock()
+			if !next.After(now) {
+				next = time.Time{}
+				for _, t := range nodes {
+					if t.n.RetryAt.After(now) && (next.IsZero() || t.n.RetryAt.Before(next)) {
+						next = t.n.RetryAt
+					}
+				}
+			}
+			waiting := time.Duration(0)
+			if next.After(now) {
+				waiting = next.Sub(now).Round(time.Second)
+			}
+			fmt.Fprintf(e.Progress, "Drive metrics: w:%d/%d %.1fMiB/s cache:%.1f/%.1fGiB wait:%s\n", count, limit, float64(transferred)/seconds/(1<<20), float64(used)/(1<<30), float64(capacity)/(1<<30), waiting)
 			if time.Since(lastPrint) > 10*time.Second {
 				fmt.Fprintf(e.Progress, "Drive progress: %d/%d entries, remaining %d, %.2f GiB confirmed, workers %d/%d, elapsed %s\n", completed, len(nodes), unresolved, float64(bytes)/(1<<30), count, limit, time.Since(started).Round(time.Second))
 				lastPrint = time.Now()

@@ -314,7 +314,7 @@ func (e *Engine) Verify(ctx context.Context) error {
 			return nil
 		}
 		n, ok := nodes[source.Path]
-		if !ok || n.State != "completed" || source.IsDir != n.Source.IsDir || source.Name != n.Source.Name || (!source.IsDir && !Same(source, n.Source)) {
+		if !ok || n.State != "completed" || source.ID != n.Source.ID || source.IsDir != n.Source.IsDir || source.Name != n.Source.Name || (!source.IsDir && !Same(source, n.Source)) {
 			return fmt.Errorf("source tree changed at %q", source.Path)
 		}
 		if seen[source.Path] {

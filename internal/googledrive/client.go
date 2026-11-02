@@ -100,7 +100,7 @@ func (c Client) request(ctx context.Context, method, address string, body io.Rea
 	reason := "request rejected"
 	if len(wire.Error.Errors) > 0 {
 		switch r := wire.Error.Errors[0].Reason; r {
-		case "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "storageQuotaExceeded", "insufficientPermissions", "notFound":
+		case "rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "storageQuotaExceeded", "insufficientPermissions", "notFound", "accessNotConfigured", "serviceDisabled", "numChildrenInNonRootLimitExceeded", "myDriveHierarchyDepthLimitExceeded", "activeItemCreationLimitExceeded":
 			reason = r
 		}
 	}

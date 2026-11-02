@@ -148,9 +148,11 @@ Implementation and automated verification are recorded below. Live account/deskt
 - [x] GD9: Add final tree/content reconciliation and CSV/JSON reports. Verify unresolved files cannot produce a success status; preserve empty folders while excluding only confirmed zero-byte files. Depends: GD8.
 - [x] GD10: Implement measured Auto-workers (start 3, range 1–8), cooldown/hysteresis and fixed-mode fallback. Verify mixed sizes, throughput regression, 429/503, network failures, staging pressure and zero deadlocks. Depends: GD8.
 - [x] GD11: Integrate Drive migration, Continue, account checks and compact progress in English/Vietnamese menus. Verify destination identity display, worker status and retry countdown. Depends: GD9, GD10.
-- [ ] Gate C: Full automated tests/race/vet/build and Windows PowerShell/pwsh/macOS checks pass. Automated tests are not live-provider proof.
+- [x] Gate C: Full automated tests/race/vet/build and Windows PowerShell/pwsh/macOS checks pass. CI run 41421783521 on source a6f2be8 passed all 9 jobs; final progress/preflight refinements also have local focused tests and will be rechecked by the next CI run. Automated tests are not live-provider proof.
 - [ ] GD12: Run small and medium representative live trials, including source changes, network interruption, process kill and disposable-machine power loss. Verify counts/tree/checksums and same-job recovery. Depends: Gate C.
 - [ ] GD13: Document setup, quota/consent limitations, intervention recovery and operating instructions; approve full-drive rollout only after live gates pass. Depends: GD12.
 
 
-Google Drive handoff: use [docs/google-drive.md](../docs/google-drive.md) on the other machine. GD13 documentation is written; fresh-machine walkthrough and full-drive approval depend on GD12 and remain incomplete. Gate A (live accounts/minimal real transfer), Gate C remote CI/runtime evidence and GD12 are not waived.
+Google Drive handoff: use [docs/google-drive.md](../docs/google-drive.md) on the other machine. GD13 documentation is written; fresh-machine walkthrough and full-drive approval depend on GD12 and remain incomplete. Gate C automated CI passed; Gate A (live accounts/minimal real transfer), native desktop consent and GD12 are not waived.
+
+- [x] GD13a: Setup/run/recovery instructions and target-machine acceptance checklist are in docs/google-drive.md. GD13 remains open for the fresh-machine walkthrough and full-rollout decision after GD12.

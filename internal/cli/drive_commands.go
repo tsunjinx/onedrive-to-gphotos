@@ -112,6 +112,7 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 			return 0
 		}
 		if command == "status" {
+
 			if e = driveSummary(store, m, out); e != nil {
 				return fail(e)
 			}
@@ -201,6 +202,7 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 			return fail(e)
 		}
 	}
+	fmt.Fprintf(out, "Source account: %q; destination account: %q\n", accountLabel(sourceSession), accountLabel(destinationSession))
 	if e = driveSummary(store, m, out); e != nil {
 		return fail(e)
 	}
@@ -300,6 +302,29 @@ func driveSummary(s *journal.Store, m drivemigration.Meta, out io.Writer) error 
 		return e
 	}
 	fmt.Fprintf(out, "Drive job: %s\nSource: /%s → Google Drive /%s\nInventory complete: %t; states: %v\n", m.ID, m.Folder, m.RootName, m.InventoryComplete, counts)
+	nodes, err := drivemigration.Load(s)
+	if err != nil {
+		return err
+	}
+	files, folders, empty := 0, 0, 0
+	var total, done, largest int64
+	for _, n := range nodes {
+		if n.Source.IsDir {
+			folders++
+			continue
+		}
+		files++
+		if n.State == "skipped" && n.Reason == "skipped_empty_file" {
+			empty++
+			continue
+		}
+		total += n.Source.Size
+		largest = max(largest, n.Source.Size)
+		if n.State == "completed" {
+			done += n.Source.Size
+		}
+	}
+	fmt.Fprintf(out, "Files: %d; folders (including destination root): %d; empty files excluded: %d\nEligible: %.3f GiB; completed: %.3f GiB; largest file: %.3f GiB; cache cap: %.1f GiB\n", files, folders, empty, float64(total)/(1<<30), float64(done)/(1<<30), float64(largest)/(1<<30), float64(m.CacheBytes)/(1<<30))
 	fmt.Fprintf(out, "Final verification: %s; issue: %s\n", m.VerifiedAt.Format(time.RFC3339), m.FinalError)
 	if m.ExcludeVault {
 		fmt.Fprintln(out, vaultExclusionNotice)

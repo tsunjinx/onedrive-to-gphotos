@@ -383,4 +383,7 @@ References (checked 2026-11-02):
 - Root inventory resumes saved delta pages. Selected-folder inventory restarts an incomplete scan, without starting uploads until complete.
 - Final verification checks app-accessible destination membership and source tree freshness. `sha256` and `metadata_only` are reported distinctly; the latter is not a byte-identity claim. A file modified/moved at the source requires explicit resolution/replanning rather than silently changing the saved migration.
 - Known first-release scope: app-created destination root in personal My Drive; no arbitrary existing-folder Picker, Shared Drive destination, OneNote export, permission/history migration, continuous sync, or boot auto-start. Inaccessible/unsupported source content blocks inventory; only Vault has an explicit exclusion UI.
-- Owner stated live trials will execute on a different machine. Keep Gate A, Gate C runtime evidence, GD12 and full-rollout approval open until that machine supplies results; CI is not a substitute for actual OAuth/large-transfer/power-loss validation.
+- Owner stated live trials will execute on a different machine. Automated Gate C is satisfied by CI. Keep Gate A, GD12, fresh-machine walkthrough and full-rollout approval open until that machine supplies results; CI is not a substitute for actual OAuth/large-transfer/power-loss validation.
+
+
+Automated checkpoint evidence: GitHub Actions [41421783521](https://github.com/tsunjinx/onedrive-to-gphotos/actions/runs/41421783521) passed all nine Windows/macOS jobs on a6f2be8. Final refinements add non-scrolling Drive worker/speed/cache/wait metrics and account/size preflight summaries; the subsequent push reruns CI. Live acceptance remains assigned to the other machine.
