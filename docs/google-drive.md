@@ -68,7 +68,7 @@ Auto-workers starts at 3 within 1–8. It observes acknowledged chunk bytes and 
 
 ## Verification and reports
 
-After transfer, verification checks destination IDs, exact names, parents, sizes, folder membership visible to the app, and a fresh source tree. New/moved/deleted/modified source items invalidate final verification; resolve or replan rather than assuming a snapshot of a changing drive.
+After transfer, paginated folder listings and a fresh source-tree scan avoid redundant per-file network requests. Verification checks destination IDs, exact names, parents, sizes, folder membership visible to the app, and a fresh source tree. New/moved/deleted/modified source items invalidate final verification; resolve or replan rather than assuming a snapshot of a changing drive.
 
 Reports label `sha256` when the destination SHA-256 matches the hash calculated during download. If the server supplies no checksum, `metadata_only` is explicitly weaker and is not proof of identical bytes. No automatic full download from Google Drive is performed for verification. Upload session URLs and refresh credentials are not exported.
 

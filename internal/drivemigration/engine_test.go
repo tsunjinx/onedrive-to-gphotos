@@ -72,6 +72,9 @@ func (d *driveFake) Get(_ context.Context, id string) (googledrive.File, error) 
 func (d *driveFake) CreateFolder(_ context.Context, f googledrive.File) (googledrive.File, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if len(f.Parents) == 0 {
+		f.Parents = []string{"actual-my-drive-root"}
+	}
 	d.files[f.ID] = f
 	if d.lostFolder {
 		d.lostFolder = false
@@ -373,5 +376,115 @@ func TestUnrecognizedStagingStopsBeforeCloudMutation(t *testing.T) {
 	}
 	if e.Run(context.Background()) == nil || d.next != 0 {
 		t.Fatal("unrecognized staging was ignored")
+	}
+}
+
+type conflictingFolder struct {
+	*driveFake
+	once bool
+}
+
+func (d *conflictingFolder) CreateFolder(ctx context.Context, f googledrive.File) (googledrive.File, error) {
+	out, err := d.driveFake.CreateFolder(ctx, f)
+	if err != nil {
+		return out, err
+	}
+	if d.once {
+		d.once = false
+		return googledrive.File{}, &googledrive.Error{Code: 409}
+	}
+	return out, nil
+}
+func TestCreateConflictReconcilesSameIDAutomatically(t *testing.T) {
+	e, d := engineFixture(t)
+	e.Destination = &conflictingFolder{d, true}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if d.next != 3 || len(d.files) != 3 {
+		t.Fatal("creation conflict duplicated destination")
+	}
+}
+
+func TestTemporaryFailureHoldingFullCacheWaitsInsteadOfStopping(t *testing.T) {
+	e, d := engineFixture(t)
+	src := e.Source.(fullSource)
+	src.items = append(src.items, onedrive.Item{ID: "b", Name: "b.txt", Path: "b.txt", Size: 3, ModTime: "2026-01-01T00:00:00Z"})
+	src.data["b.txt"] = []byte("abc")
+	e.Source = src
+	e.Meta.CacheBytes = 31
+	e.Meta.InventoryComplete = false
+	if err := Discover(context.Background(), src, e.Store, e.Meta, nil); err != nil {
+		t.Fatal(err)
+	}
+	d.failures = 1
+	e.retryDelay = func(int) time.Duration { return 200 * time.Millisecond }
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Verify(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type limitedFolder struct {
+	*driveFake
+	once  bool
+	until time.Time
+}
+
+func (d *limitedFolder) CreateFolder(ctx context.Context, f googledrive.File) (googledrive.File, error) {
+	if d.once {
+		d.once = false
+		return googledrive.File{}, &googledrive.Error{Code: 429, RetryAt: d.until}
+	}
+	if time.Now().Before(d.until) {
+		return googledrive.File{}, fmt.Errorf("retried before server deadline")
+	}
+	return d.driveFake.CreateFolder(ctx, f)
+}
+func TestServerRetryAfterIsPersistedAndHonored(t *testing.T) {
+	e, d := engineFixture(t)
+	until := time.Now().Add(200 * time.Millisecond)
+	e.Destination = &limitedFolder{d, true, until}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var saved Meta
+	if err := e.Store.Load(0, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.PauseUntil.Before(until) {
+		t.Fatal("server retry deadline was shortened or not saved")
+	}
+}
+
+func TestAppRootLearnsParentWithoutUnrelatedRootAccess(t *testing.T) {
+	e, d := engineFixture(t)
+	e.Meta.RootParentID = ""
+	d.lostFolder = true
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := e.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := Load(e.Store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if nodes[""].ParentTarget != "actual-my-drive-root" {
+		t.Fatal("root parent was not durably learned")
+	}
+	if err = e.Verify(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = e.Run(ctx); err != nil {
+		t.Fatal(err)
 	}
 }

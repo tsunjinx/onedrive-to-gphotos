@@ -387,3 +387,5 @@ References (checked 2026-11-02):
 
 
 Automated checkpoint evidence: GitHub Actions [41421783521](https://github.com/tsunjinx/onedrive-to-gphotos/actions/runs/41421783521) passed all nine Windows/macOS jobs on a6f2be8. Final refinements add non-scrolling Drive worker/speed/cache/wait metrics and account/size preflight summaries; the subsequent push reruns CI. Live acceptance remains assigned to the other machine.
+
+Drive API compatibility refinement: create the dedicated application root with omitted parents (official API default: My Drive), then durably record its returned parent after checking the generated ID and job provenance. This avoids depending on unrelated My Drive root metadata under the limited drive.file scope. Inventory checkpoints batch up to 100 nodes; final verification uses paginated folder metadata and a fresh source-tree scan rather than redundant per-file round trips. HTTP 409 creation conflicts automatically recheck the same retained target ID.

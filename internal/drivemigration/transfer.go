@@ -35,11 +35,23 @@ func (e *Engine) metadata(n *Node) googledrive.File {
 	if n.Source.IsDir {
 		mime = googledrive.Folder
 	}
-	return googledrive.File{ID: n.TargetID, Name: n.Source.Name, MIME: mime, Parents: []string{n.ParentTarget}, Modified: n.Source.ModTime, Properties: map[string]string{"od2gp_job": e.Meta.ID, "onedrive_id": n.Source.ID}}
+	parents := []string{n.ParentTarget}
+	if n.Source.IsDir && n.Source.Path == "" && n.ParentTarget == "" {
+		parents = nil
+	} // API defaults a new root to My Drive.
+	return googledrive.File{ID: n.TargetID, Name: n.Source.Name, MIME: mime, Parents: parents, Modified: n.Source.ModTime, Properties: map[string]string{"od2gp_job": e.Meta.ID, "onedrive_id": n.Source.ID}}
 }
 func (e *Engine) verify(n *Node, f googledrive.File) error {
-	if f.ID != n.TargetID || f.Name != n.Source.Name || f.Trashed || len(f.Parents) != 1 || f.Parents[0] != n.ParentTarget || f.Properties["od2gp_job"] != e.Meta.ID || f.Properties["onedrive_id"] != n.Source.ID {
+	if f.ID != n.TargetID || f.Name != n.Source.Name || f.Trashed || len(f.Parents) != 1 || f.Properties["od2gp_job"] != e.Meta.ID || f.Properties["onedrive_id"] != n.Source.ID {
 		return errors.New("destination identity/name/parent conflict; intervention required")
+	}
+	// Learn the actual My Drive parent from our own created folder, not by
+	// requesting unrelated root metadata with the limited drive.file scope.
+	if n.Source.IsDir && n.Source.Path == "" && n.ParentTarget == "" {
+		n.ParentTarget = f.Parents[0]
+	}
+	if f.Parents[0] != n.ParentTarget {
+		return errors.New("destination parent changed; intervention required")
 	}
 	if n.Source.IsDir {
 		if f.MIME != googledrive.Folder {
@@ -236,52 +248,32 @@ func (e *Engine) complete(id int64, n *Node) error {
 
 // Verify rechecks cloud identities and checksums. It does not mark missing items complete.
 func (e *Engine) Verify(ctx context.Context) error {
-	ids, err := e.Store.IDs()
+	nodes, err := Load(e.Store)
 	if err != nil {
 		return err
 	}
-	for _, id := range ids {
-		var n Node
-		if err = e.Store.Load(id, &n); err != nil {
-			return err
-		}
+	expected := map[string]map[string]Node{}
+	for _, n := range nodes {
 		if n.State == "skipped" {
 			continue
 		}
 		if n.State != "completed" {
 			return errors.New("job still contains unresolved items")
 		}
-		f, err := e.Destination.Get(ctx, n.TargetID)
-		if err != nil {
-			return err
-		}
-		if err = e.verify(&n, f); err != nil {
-			return fmt.Errorf("verification failed for %q: %w", n.Source.Path, err)
-		}
-		if !n.Source.IsDir {
-			source, err := e.Source.Stat(ctx, path.Join(e.Meta.Folder, n.Source.Path))
+		if n.Source.Path == "" {
+			f, err := e.Destination.Get(ctx, n.TargetID)
 			if err != nil {
 				return err
 			}
-			if !Same(source, n.Source) {
-				return fmt.Errorf("source changed after transfer: %q", n.Source.Path)
+			if err = e.verify(&n, f); err != nil {
+				return err
 			}
-		}
-	}
-
-	nodes, err := Load(e.Store)
-	if err != nil {
-		return err
-	}
-	expected := map[string]map[string]bool{}
-	for _, n := range nodes {
-		if n.State == "skipped" || n.Source.Path == "" {
 			continue
 		}
 		if expected[n.ParentTarget] == nil {
-			expected[n.ParentTarget] = map[string]bool{}
+			expected[n.ParentTarget] = map[string]Node{}
 		}
-		expected[n.ParentTarget][n.TargetID] = true
+		expected[n.ParentTarget][n.TargetID] = n
 	}
 	lister, ok := e.Destination.(interface {
 		Children(context.Context, string) ([]googledrive.File, error)
@@ -289,23 +281,27 @@ func (e *Engine) Verify(ctx context.Context) error {
 	if !ok {
 		return errors.New("destination cannot verify folder membership")
 	}
-	for _, n := range nodes {
-		if !n.Source.IsDir || n.State != "completed" {
+	for _, folder := range nodes {
+		if !folder.Source.IsDir || folder.State != "completed" {
 			continue
 		}
-		children, err := lister.Children(ctx, n.TargetID)
+		children, err := lister.Children(ctx, folder.TargetID)
 		if err != nil {
 			return err
 		}
 		seen := map[string]bool{}
 		for _, child := range children {
-			if !expected[n.TargetID][child.ID] || seen[child.ID] {
-				return fmt.Errorf("unexpected or repeated destination item in %q", n.Source.Path)
+			n, ok := expected[folder.TargetID][child.ID]
+			if !ok || seen[child.ID] {
+				return fmt.Errorf("unexpected or repeated destination item in %q", folder.Source.Path)
+			}
+			if err = e.verify(&n, child); err != nil {
+				return fmt.Errorf("verification failed for %q: %w", n.Source.Path, err)
 			}
 			seen[child.ID] = true
 		}
-		if len(seen) != len(expected[n.TargetID]) {
-			return fmt.Errorf("destination folder membership changed: %q", n.Source.Path)
+		if len(seen) != len(expected[folder.TargetID]) {
+			return fmt.Errorf("destination folder membership changed: %q", folder.Source.Path)
 		}
 	}
 	seen := map[string]bool{}

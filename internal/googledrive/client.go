@@ -48,7 +48,7 @@ type Error struct {
 
 func (e *Error) Error() string { return fmt.Sprintf("Google Drive HTTP %d (%s)", e.Code, e.Reason) }
 func (e *Error) Temporary() bool {
-	return e.Code == 0 || e.Code == 429 || e.Code >= 500 || e.Code == 403 && (e.Reason == "rateLimitExceeded" || e.Reason == "userRateLimitExceeded" || e.Reason == "dailyLimitExceeded")
+	return e.Code == 0 || e.Code == 409 || e.Code == 429 || e.Code >= 500 || e.Code == 403 && (e.Reason == "rateLimitExceeded" || e.Reason == "userRateLimitExceeded" || e.Reason == "dailyLimitExceeded")
 }
 
 type Client struct{ HTTP *http.Client }
@@ -251,20 +251,4 @@ func (c Client) Children(ctx context.Context, parent string) ([]File, error) {
 		seen[page.Next] = true
 		token = page.Next
 	}
-}
-
-// RootID resolves the 'root' alias to the actual parent ID returned by Drive.
-func (c Client) RootID(ctx context.Context) (string, error) {
-	r, e := c.request(ctx, "GET", api+"files/root?fields=id", nil, nil)
-	if e != nil {
-		return "", e
-	}
-	var f File
-	if e = decode(r, &f); e != nil {
-		return "", e
-	}
-	if f.ID == "" {
-		return "", errors.New("Drive root ID unavailable")
-	}
-	return f.ID, nil
 }

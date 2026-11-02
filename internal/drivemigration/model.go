@@ -70,6 +70,17 @@ func Discover(ctx context.Context, s Source, store *journal.Store, m *Meta, prog
 	}
 	seen := map[string]bool{}
 	paths := map[string]bool{}
+	var batch []journal.Record
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if err := store.SaveBatch(batch); err != nil {
+			return err
+		}
+		batch = nil
+		return nil
+	}
 	var id int64 = 1
 	visit := func(item onedrive.Item) error {
 		if ctx.Err() != nil {
@@ -102,8 +113,11 @@ func Discover(ctx context.Context, s Source, store *journal.Store, m *Meta, prog
 			}
 		}
 		id++
-		if err := store.Save(id, n.State, n); err != nil {
-			return err
+		batch = append(batch, journal.Record{ID: id, State: n.State, Value: n})
+		if id%100 == 0 {
+			if err := flush(); err != nil {
+				return err
+			}
 		}
 		if progress != nil && id%100 == 0 {
 			fmt.Fprintf(progress, "Scanned %d source files and folders.\n", id-1)
@@ -120,6 +134,9 @@ func Discover(ctx context.Context, s Source, store *journal.Store, m *Meta, prog
 		err = s.WalkTree(ctx, m.Folder, visit)
 	}
 	if err != nil {
+		return err
+	}
+	if err := flush(); err != nil {
 		return err
 	}
 	nodes, err := Load(store)

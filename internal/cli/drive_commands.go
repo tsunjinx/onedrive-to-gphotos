@@ -166,15 +166,11 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 		if *id != "" {
 			return fail(errors.New("plan generates its own job ID"))
 		}
-		parentID, err := destination.RootID(ctx)
-		if err != nil {
-			return fail(err)
-		}
 		*id, e = migration.ID()
 		if e != nil {
 			return fail(e)
 		}
-		m = drivemigration.Meta{Kind: drivemigration.Kind, RootParentID: parentID, ID: *id, Folder: selected, RootName: *name, DriveID: source.Drive, SourceSubject: sourceSession.Account.Subject, SourceClient: sourceSession.ClientID, DestinationSubject: destinationSession.Account.Subject, DestinationClient: destinationSession.ClientID, CacheBytes: *cache << 30, ExcludeVault: *vault, Created: time.Now().UTC()}
+		m = drivemigration.Meta{Kind: drivemigration.Kind, ID: *id, Folder: selected, RootName: *name, DriveID: source.Drive, SourceSubject: sourceSession.Account.Subject, SourceClient: sourceSession.ClientID, DestinationSubject: destinationSession.Account.Subject, DestinationClient: destinationSession.ClientID, CacheBytes: *cache << 30, ExcludeVault: *vault, Created: time.Now().UTC()}
 		key, e := journal.Key(*id, true)
 		if e != nil {
 			return fail(e)
@@ -238,17 +234,19 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 	opts, _ := loadMenuOptions(root)
 	progress, closeProgress := startTransferDisplay(store, errOut, false, opts.Language)
 	defer closeProgress()
+	transferFail := func(err error) int { closeProgress(); return fail(err) }
 	engine := drivemigration.Engine{Store: store, Source: &source, Destination: destination, Meta: &m, Directory: filepath.Join(base, *id), Workers: count, Auto: auto, Progress: progress}
 	if command != "verify" {
 		if e = engine.Run(ctx); e != nil {
-			return fail(e)
+			return transferFail(e)
 		}
 	}
 	m.VerifiedAt = time.Time{}
 	m.FinalError = ""
 	if e = store.Save(0, "drive-job", m); e != nil {
-		return fail(e)
+		return transferFail(e)
 	}
+	fmt.Fprintln(progress, "Verifying final source and destination trees...")
 	// Final verification may also outlast a temporary provider outage.
 	for attempt := 0; ; attempt++ {
 		e = engine.Verify(ctx)
@@ -262,9 +260,9 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 		if !retryable {
 			m.FinalError = e.Error()
 			if saveErr := store.Save(0, "drive-job", m); saveErr != nil {
-				return fail(saveErr)
+				return transferFail(saveErr)
 			}
-			return fail(e)
+			return transferFail(e)
 		}
 		delay := min(time.Duration(1<<min(attempt, 8))*time.Second, 5*time.Minute)
 		if sourcePause != nil && sourcePause.RetryTime().After(time.Now().Add(delay)) {
@@ -281,17 +279,17 @@ func driveTask(ctx context.Context, args []string, input io.Reader, out, errOut 
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return fail(ctx.Err())
+			return transferFail(ctx.Err())
 		case <-timer.C:
 		}
 	}
 	m.VerifiedAt = time.Now().UTC()
 	if e = store.Save(0, "drive-job", m); e != nil {
-		return fail(e)
+		return transferFail(e)
 	}
 	closeProgress()
 	if e = driveSummary(store, m, out); e != nil {
-		return fail(e)
+		return transferFail(e)
 	}
 	fmt.Fprintln(out, "Drive transfer and final tree verification finished. Review checksum strength and exclusions in the report.")
 	return 0

@@ -226,9 +226,8 @@ func (e *Engine) Run(ctx context.Context) error {
 				}
 				t.n.ParentTarget = p.n.TargetID
 			} else {
-				t.n.ParentTarget = e.Meta.RootParentID
 				if t.n.ParentTarget == "" {
-					return errors.New("destination root parent ID unavailable")
+					t.n.ParentTarget = e.Meta.RootParentID
 				}
 			}
 			pending = append(pending, t)
