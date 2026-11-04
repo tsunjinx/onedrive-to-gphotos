@@ -12,20 +12,18 @@ type Tuner struct {
 	bytes           int64
 	previous        float64
 	trial           bool
+	recoverUntil    time.Time
 }
 
 func NewTuner(now time.Time) *Tuner { return &Tuner{Limit: 3, start: now, changed: now} }
 func (t *Tuner) Observe(now time.Time, bytes int64, pressure, failed bool) (int, string) {
 	t.bytes += bytes
 	if failed || pressure {
+		// Every failure refreshes recovery, including failures at the minimum.
+		t.recoverUntil = now.Add(2 * time.Minute)
+		t.hold(now)
 		if t.Limit > 1 {
 			t.Limit--
-			t.changed = now
-			t.start = now
-			t.bytes = 0
-			t.latency = 0
-			t.samples = 0
-			t.trial = false
 			return t.Limit, "backoff or staging pressure"
 		}
 		return t.Limit, ""
@@ -54,6 +52,9 @@ func (t *Tuner) Observe(now time.Time, bytes int64, pressure, failed bool) (int,
 			return t.Limit, "higher concurrency did not improve throughput"
 		}
 	}
+	if now.Before(t.recoverUntil) {
+		return t.Limit, ""
+	}
 	if t.Limit < 8 {
 		t.previous = rate
 		t.previousLatency = average
@@ -69,4 +70,22 @@ func (t *Tuner) ObserveNetwork(now time.Time, bytes int64, latency time.Duration
 	t.latency += latency
 	t.samples += samples
 	return t.Observe(now, bytes, pressure, failed)
+}
+
+// hold discards samples gathered during provider pauses or retry backoff. They
+// must not be interpreted as a healthy throughput trial when a pause expires.
+func (t *Tuner) hold(now time.Time) {
+	t.start = now
+	t.changed = now
+	t.bytes = 0
+	t.latency = 0
+	t.samples = 0
+	t.trial = false
+}
+func (t *Tuner) ObserveTransfer(now time.Time, bytes int64, latency time.Duration, samples int, pressure, recovering bool) (int, string) {
+	if recovering {
+		t.hold(now)
+		return t.Limit, ""
+	}
+	return t.ObserveNetwork(now, bytes, latency, samples, pressure, false)
 }

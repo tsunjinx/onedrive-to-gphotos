@@ -122,3 +122,9 @@ od2gp drive resume --job JOB_ID --exclude-path "/Documents/Notebook"
 ```
 
 Exclusions can only be added while inventory is incomplete and no transfer activity has occurred. Accepted/completed jobs retain their original scope. Root delta pages already saved under the same job/source binding are reused; the local inventory is rebuilt from those pages. Selected-folder scans use the same exclusions during both discovery and final verification. Excluding a OneNote object does not export or convert it; handle its contents separately if needed.
+
+### Auto-workers during repeated interruptions
+
+The progress field identifies the mode, for example `w:2/3(auto)` or `w:8/8(fixed)`. Its first number counts active file tasks and the second is the dispatch limit. Lowering the limit does not cancel existing transfers, so the active count can temporarily exceed the new limit.
+
+In Auto mode, a reported failure reduces the limit and starts a two-minute recovery period, including failures at the minimum of one worker. Pending retry deadlines or a provider pause prevent increases and discard throughput samples from that period. After recovery, Auto needs a new positive throughput window before trying one additional worker. Backoff decisions are logged. This prevents progress on a few files from immediately restoring high concurrency while others are waiting to retry; it does not by itself diagnose or repair the underlying connection problem.

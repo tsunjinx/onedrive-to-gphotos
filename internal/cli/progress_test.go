@@ -48,11 +48,11 @@ func TestProgressFitsNarrowWindow(t *testing.T) {
 func TestDriveMetricsUpdateBarWithoutScrolling(t *testing.T) {
 	var out bytes.Buffer
 	d := transferDisplay{out: &out, columns: func() int { return 100 }, started: time.Now().Add(-time.Minute)}
-	if _, err := d.Write([]byte("Drive metrics: w:2/3 4.5MiB/s cache:1/30GiB wait:0s\n")); err != nil {
+	if _, err := d.Write([]byte("Drive metrics: w:2/3(auto) 4.5MiB/s cache:1/30GiB wait:0s\n")); err != nil {
 		t.Fatal(err)
 	}
 	d.render(map[string]int{"completed": 10, "pending": 20}, time.Now())
-	if strings.Contains(out.String(), "\n") || !strings.Contains(out.String(), "w:2/3") || !strings.Contains(out.String(), "ETA:") || !strings.Contains(out.String(), "left:20") {
+	if strings.Contains(out.String(), "\n") || !strings.Contains(out.String(), "w:2/3(auto)") || !strings.Contains(out.String(), "ETA:") || !strings.Contains(out.String(), "left:20") {
 		t.Fatalf("bad Drive progress: %q", out.String())
 	}
 }

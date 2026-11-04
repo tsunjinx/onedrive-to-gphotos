@@ -347,7 +347,11 @@ func (e *Engine) Run(ctx context.Context) error {
 					t.n.State = "blocked"
 				}
 				if e.Auto {
-					limit, _ = tuner.Observe(time.Now(), 0, false, true)
+					var reason string
+					limit, reason = tuner.Observe(time.Now(), 0, false, true)
+					if reason != "" {
+						fmt.Fprintf(e.Progress, "Auto-workers: %d (%s)\n", limit, reason)
+					}
 				}
 				fmt.Fprintf(e.Progress, "%q: %s; state=%s, retry=%s\n", t.n.Source.Path, t.n.Reason, t.n.State, t.n.RetryAt.Format(time.RFC3339))
 				if err = e.save(t.id, &t.n); err != nil {
@@ -372,10 +376,19 @@ func (e *Engine) Run(ctx context.Context) error {
 			transferred := e.sent.Swap(0)
 			duration := time.Duration(e.latency.Swap(0))
 			requests := int(e.requests.Swap(0))
+			e.mu.Lock()
+			recovering := e.pause.After(now)
+			e.mu.Unlock()
+			for _, t := range nodes {
+				if t.n.State == "retry" && t.n.RetryAt.After(now) {
+					recovering = true
+					break
+				}
+			}
 			if e.Auto {
 				pressure := used >= capacity && count < limit
 				var reason string
-				limit, reason = tuner.ObserveNetwork(time.Now(), transferred, duration, requests, pressure, false)
+				limit, reason = tuner.ObserveTransfer(now, transferred, duration, requests, pressure, recovering)
 				if reason != "" {
 					fmt.Fprintf(e.Progress, "Auto-workers: %d (%s)\n", limit, reason)
 				}
@@ -395,7 +408,11 @@ func (e *Engine) Run(ctx context.Context) error {
 			if next.After(now) {
 				waiting = next.Sub(now).Round(time.Second)
 			}
-			fmt.Fprintf(e.Progress, "Drive metrics: w:%d/%d %.1fMiB/s cache:%.1f/%.1fGiB wait:%s\n", count, limit, float64(transferred)/seconds/(1<<20), float64(used)/(1<<30), float64(capacity)/(1<<30), waiting)
+			mode := "fixed"
+			if e.Auto {
+				mode = "auto"
+			}
+			fmt.Fprintf(e.Progress, "Drive metrics: w:%d/%d(%s) %.1fMiB/s cache:%.1f/%.1fGiB wait:%s\n", count, limit, mode, float64(transferred)/seconds/(1<<20), float64(used)/(1<<30), float64(capacity)/(1<<30), waiting)
 			if time.Since(lastPrint) > 10*time.Second {
 				fmt.Fprintf(e.Progress, "Drive progress: %d/%d entries, remaining %d, %.2f GiB confirmed, workers %d/%d, elapsed %s\n", completed, len(nodes), unresolved, float64(bytes)/(1<<30), count, limit, time.Since(started).Round(time.Second))
 				lastPrint = time.Now()

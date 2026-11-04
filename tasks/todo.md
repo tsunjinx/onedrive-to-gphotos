@@ -160,3 +160,5 @@ Google Drive handoff: use [docs/google-drive.md](../docs/google-drive.md) on the
 - [x] Drive inventory recovery: explicit persisted path/subtree exclusions for unsupported objects (including OneNote packages); incomplete-job Continue menu, report disclosure, unchanged raw-delta checkpoint reuse, and refusal to change scope after transfer activity. Live target-machine validation remains part of GD12.
 
 - [x] Automatic Drive package handling: identify Microsoft Graph package objects by metadata, record skipped roots/unknown contents, retain ordinary files and special folders, apply the same policy in discovery and verification. Old incomplete jobs adopt the policy using existing delta pages; completed job scope is retained.
+
+- [x] Drive Auto-workers interruption recovery: two-minute quiet period after errors (including at minimum concurrency), no growth during persisted retry/provider pauses, explicit auto/fixed progress mode and visible backoff decisions. Regression tests cover premature recovery and delayed retries; target-machine behavior remains to be verified.
