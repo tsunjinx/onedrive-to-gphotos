@@ -55,7 +55,10 @@ func TestBatchCommitFlushesAtCapacityAndEndWithoutDeadlock(t *testing.T) {
 	for _, capFiles := range []int{1, 3, 6} {
 		t.Run(fmt.Sprint(capFiles), func(t *testing.T) {
 			e, meta, p := batchFixture(t, capFiles)
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			// Six sequential durable transfers at a one-file cache cap can
+			// exceed three seconds on native Windows CI. Keep the deadlock
+			// deadline bounded without using runner speed as correctness.
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if err := e.Run(ctx, meta); err != nil {
 				t.Fatal(err)
